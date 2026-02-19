@@ -1,62 +1,56 @@
-import { useEffect } from "react";
-import { FaceMesh } from "@mediapipe/face_mesh";
+import React, { useEffect } from "react";
 
 export default function PostureAnalyzer({ videoRef, onScoreUpdate }) {
+
   useEffect(() => {
     if (!videoRef?.current) return;
 
-    const faceMesh = new FaceMesh({
-      locateFile: (file) =>
-        require("@mediapipe/face_mesh/" + file),
-    });
+    // Load MediaPipe script dynamically
+    const script = document.createElement("script");
+    script.src =
+      "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js";
+    script.async = true;
 
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6,
-    });
+    script.onload = () => {
+      const faceMesh = new window.FaceMesh({
+        locateFile: (file) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+      });
 
-    faceMesh.onResults((results) => {
-      if (!results.multiFaceLandmarks) return;
+      faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
 
-      const landmarks = results.multiFaceLandmarks[0];
+      faceMesh.onResults((results) => {
+        if (!results.multiFaceLandmarks) return;
 
-      const leftEye = landmarks[33];
-      const rightEye = landmarks[263];
-      const noseTip = landmarks[1];
+        const landmarks = results.multiFaceLandmarks[0];
 
-      const eyeCenterX = (leftEye.x + rightEye.x) / 2;
-      const gazeOffset = Math.abs(noseTip.x - eyeCenterX);
-      const eyeContactScore = 1 - Math.min(gazeOffset * 3, 1);
+        const leftEye = landmarks[33];
+        const rightEye = landmarks[263];
+        const nose = landmarks[1];
 
-      const tilt = Math.abs(leftEye.y - rightEye.y);
-      const headTiltScore = 1 - Math.min(tilt * 5, 1);
+        const eyeCenterX = (leftEye.x + rightEye.x) / 2;
+        const gazeOffset = Math.abs(nose.x - eyeCenterX);
 
-      const jaw = landmarks[152];
-      const chinMovement = Math.abs(jaw.x - noseTip.x);
-      const movementScore = 1 - Math.min(chinMovement * 2, 1);
+        const eyeScore = 1 - Math.min(gazeOffset * 3, 1);
 
-      const finalScore =
-        eyeContactScore * 0.5 +
-        headTiltScore * 0.3 +
-        movementScore * 0.2;
+        onScoreUpdate(eyeScore);
+      });
 
-      onScoreUpdate(finalScore);
-    });
+      const interval = setInterval(async () => {
+        if (videoRef.current.readyState >= 2) {
+          await faceMesh.send({ image: videoRef.current });
+        }
+      }, 100);
 
-    let animationFrame;
-
-    const analyze = async () => {
-      if (videoRef.current?.readyState === 4) {
-        await faceMesh.send({ image: videoRef.current });
-      }
-      animationFrame = requestAnimationFrame(analyze);
+      return () => clearInterval(interval);
     };
 
-    analyze();
-
-    return () => cancelAnimationFrame(animationFrame);
+    document.body.appendChild(script);
   }, [videoRef, onScoreUpdate]);
 
   return null;
