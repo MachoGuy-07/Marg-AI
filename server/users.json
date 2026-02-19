@@ -1,0 +1,16 @@
+{
+  "users": [
+    {
+      "id": "u_1764379547007",
+      "name": "qwerfgh",
+      "email": "asd@gmail.com",
+      "createdAt": "2025-11-29T01:25:47.007Z"
+    },
+    {
+      "id": "u_1764382106465",
+      "name": "viswa",
+      "email": "viswa@gmail.com",
+      "createdAt": "2025-11-29T02:08:26.465Z"
+    }
+  ]
+}
