@@ -1,9 +1,8 @@
 // client/src/pages/MockInterview.jsx
 
 import React, { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import VideoRecorder from "../components/VideoRecorder";
-import "../styles/home.css";
 
 const QUESTIONS = [
   { id: "q1", text: "Tell me about yourself.", timeLimit: 40 },
@@ -13,9 +12,13 @@ const QUESTIONS = [
   { id: "q5", text: "How do you handle feedback?", timeLimit: 40 },
 ];
 
+const fillerWords = [
+  "um","uh","like","basically","hmm",
+  "you know","so","actually","literally"
+];
+
 export default function MockInterview() {
-  const location = useLocation();
-  const [enterClass, setEnterClass] = useState("");
+  const navigate = useNavigate();
 
   const [index, setIndex] = useState(0);
   const [analysis, setAnalysis] = useState(null);
@@ -24,22 +27,54 @@ export default function MockInterview() {
   const [liveConfidence, setLiveConfidence] = useState(0);
   const [liveVoiceScore, setLiveVoiceScore] = useState(1);
 
+  const [transcript, setTranscript] = useState("");
+  const [wpm, setWpm] = useState(0);
+  const [fillerCount, setFillerCount] = useState(0);
+
+  const recognitionRef = useRef(null);
+  const startTimeRef = useRef(null);
   const timerRef = useRef(null);
 
   // -------------------------
-  // Direction Animation
+  // Speech Recognition
   // -------------------------
   useEffect(() => {
-    if (location.state?.direction === "left") {
-      setEnterClass("enter-from-left");
-    } else if (location.state?.direction === "right") {
-      setEnterClass("enter-from-right");
-    }
-  }, [location.state]);
+    if (!("webkitSpeechRecognition" in window)) return;
 
-  useEffect(() => {
-    return () => clearInterval(timerRef.current);
+    const recognition = new window.webkitSpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event) => {
+      let text = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        text += event.results[i][0].transcript;
+      }
+      setTranscript(text);
+    };
+
+    recognitionRef.current = recognition;
   }, []);
+  useEffect(()=>{
+  return ()=> clearInterval(timerRef.current);
+},[]);
+
+  // -------------------------
+  // Recording Sync
+  // -------------------------
+  function handleRecordingStart(){
+    setTranscript("");
+    setTimeout(()=>{
+      recognitionRef.current?.start();
+      startTimeRef.current = Date.now();
+    }, 200);
+  }
+
+  function handleRecordingStop(){
+  setTimeout(()=>{
+    recognitionRef.current?.stop();
+  },300);
+}
 
   // -------------------------
   // Timer
@@ -74,131 +109,145 @@ export default function MockInterview() {
   }
 
   // -------------------------
-  // Combine Backend + Live AI
+  // Speech Metrics
+  // -------------------------
+  useEffect(() => {
+    if (!transcript || !startTimeRef.current) return;
+
+    const words = transcript.toLowerCase().match(/\w+/g) || [];
+    const totalWords = words.length;
+
+    const durationMs = Date.now() - startTimeRef.current;
+    const durationMin = Math.max(durationMs / 60000, 0.1);
+
+    const wpmVal = totalWords / durationMin;
+
+    let filler = 0;
+    words.forEach(w=>{
+      const clean = w.replace(/[.,!?]/g,"").trim();
+      if(fillerWords.includes(clean)) filler++;
+    });
+
+    setWpm(Math.round(wpmVal));
+    setFillerCount(filler);
+  }, [transcript]);
+
+  // -------------------------
+  // AI Feedback Generator
+  // -------------------------
+  function generateAIFeedback({ confidence, wpm, filler }) {
+    const feedback = [];
+
+    if (confidence >= 8) feedback.push("You appeared confident and composed.");
+    else if (confidence >= 6) feedback.push("Your confidence was moderate. Maintain stronger eye contact.");
+    else feedback.push("You seemed nervous. Try relaxing your shoulders.");
+
+    if (wpm > 160) feedback.push("You spoke too fast.");
+    else if (wpm < 110) feedback.push("You spoke slightly slow.");
+    else feedback.push("Your speaking pace was good.");
+
+    if (filler > 3) feedback.push("Too many filler words.");
+    else if (filler > 0) feedback.push("Minor filler words detected.");
+    else feedback.push("Great! No filler words.");
+
+    return feedback;
+  }
+
+  // -------------------------
+  // Combine Scores
   // -------------------------
   function handleUploadComplete(data) {
-    if (!data.analysis) return;
+    recognitionRef.current?.stop();
+
+    if (!data.analysis) {
+      alert("Analysis failed");
+      return;
+    }
 
     const backendScore = data.analysis.confidence_score / 10;
 
+    const paceScore =
+      wpm > 110 && wpm < 160 ? 1 : 0.7;
+
+    const fillerScore =
+      fillerCount === 0 ? 1 : Math.max(0.5, 1 - fillerCount * 0.05);
+
     const combined =
-      backendScore * 0.5 +
-      liveConfidence * 0.3 +
-      liveVoiceScore * 0.2;
+      backendScore * 0.4 +
+      liveConfidence * 0.25 +
+      liveVoiceScore * 0.2 +
+      paceScore * 0.1 +
+      fillerScore * 0.05;
 
     data.analysis.confidence_score = Math.round(combined * 10);
 
+    const aiFeedback = generateAIFeedback({
+      confidence: data.analysis.confidence_score,
+      wpm,
+      filler: fillerCount
+    });
+
+    data.analysis.ai_feedback = aiFeedback;
     setAnalysis(data.analysis);
+
+    // ⭐ Navigate to report page
+    console.log("Transcript before navigation:", transcript);
+
+console.log("Transcript before navigation:", transcript);
+
+// ⭐ Save before navigation
+// ⭐ Wait for final speech result before saving
+setTimeout(()=>{
+  localStorage.setItem("report_analysis", JSON.stringify(data.analysis));
+  localStorage.setItem("report_transcript", transcript || "Transcript not captured");
+
+  console.log("Saved transcript:", transcript);
+
+  navigate("/report");
+}, 500);
   }
 
   return (
-    <div
-      className={`mock-page ${enterClass}`}
-      style={{
-        display: "flex",
-        height: "100vh",
-        background: "linear-gradient(135deg,#f8fafc,#eef2ff)",
-        padding: "50px",
-        gap: "50px",
-        fontFamily: "Inter, sans-serif",
-      }}
-    >
-      {/* LEFT SIDE */}
+    <div style={{ display: "flex", height: "100vh", padding: 50, gap: 50 }}>
       <div style={{ flex: 1.3 }}>
-        <h2 style={{ marginBottom: 20 }}>🤖 AI Mock Interview</h2>
+        <h2>🤖 AI Mock Interview</h2>
 
-        <div style={{ background: "#fff", padding: 30, borderRadius: 20 }}>
-          <p>
-            Question {index + 1} of {QUESTIONS.length}
-          </p>
+        <h3>{QUESTIONS[index].text}</h3>
+        <p>⏳ {timeLeft}s</p>
 
-          <h3 style={{ marginTop: 10 }}>
-            {QUESTIONS[index].text}
-          </h3>
+        <button onClick={askQuestion}>Ask</button>
+        <button onClick={nextQuestion}>Next</button>
 
-          <p
-            style={{
-              marginTop: 10,
-              fontWeight: 600,
-              color: timeLeft <= 5 ? "#ef4444" : "#10b981",
-            }}
-          >
-            ⏳ {timeLeft}s
-          </p>
-
-          <div style={{ marginTop: 15 }}>
-            <button onClick={askQuestion}>Ask</button>
-            <button onClick={nextQuestion} style={{ marginLeft: 10 }}>
-              Next
-            </button>
-          </div>
+        <div style={{ marginTop: 20 }}>
+          <strong>Transcript:</strong>
+          <p>{transcript || "Start speaking..."}</p>
         </div>
 
-        {/* FEEDBACK */}
-        <div
-          style={{
-            marginTop: 30,
-            background: "#fff",
-            padding: 25,
-            borderRadius: 20,
-          }}
-        >
-          <h4>📊 AI Feedback</h4>
+        <p>WPM: {wpm}</p>
+        <p>Filler words: {fillerCount}</p>
 
-          <div style={{ marginBottom: 10 }}>
-            <strong>Live Confidence:</strong>{" "}
-            {(liveConfidence * 100).toFixed(0)}%
+        {analysis && (
+          <>
+            <p>Final Confidence: {analysis.confidence_score}/10</p>
+            <p>Pace: {analysis.pace_score}/10</p>
+            <p>Engagement: {analysis.engagement_score}/10</p>
 
-            <div
-              style={{
-                height: 8,
-                background: "#e2e8f0",
-                borderRadius: 20,
-                marginTop: 5,
-              }}
-            >
-              <div
-                style={{
-                  width: `${liveConfidence * 100}%`,
-                  height: "100%",
-                  background:
-                    liveConfidence > 0.7
-                      ? "#22c55e"
-                      : liveConfidence > 0.4
-                      ? "#f59e0b"
-                      : "#ef4444",
-                }}
-              />
-            </div>
-          </div>
-
-          {analysis ? (
-            <>
-              <p>
-                <strong>Final Confidence:</strong>{" "}
-                {analysis.confidence_score}/10
-              </p>
-              <p><strong>Pace:</strong> {analysis.pace_score}/10</p>
-              <p><strong>Engagement:</strong> {analysis.engagement_score}/10</p>
-              <p><strong>WPM:</strong> {analysis.words_per_minute}</p>
-            </>
-          ) : (
-            <p style={{ color: "#94a3b8" }}>
-              Record your answer to see evaluation.
-            </p>
-          )}
-        </div>
+            <h4>AI Feedback</h4>
+            {analysis.ai_feedback?.map((f,i)=>(
+              <p key={i}>💡 {f}</p>
+            ))}
+          </>
+        )}
       </div>
 
-      {/* RIGHT SIDE */}
       <div style={{ flex: 0.9 }}>
-        <div style={{ background: "#fff", padding: 20, borderRadius: 20 }}>
-          <VideoRecorder
-            onUploadComplete={handleUploadComplete}
-            onPostureScore={setLiveConfidence}
-            onVoiceScore={setLiveVoiceScore}
-          />
-        </div>
+        <VideoRecorder
+          onUploadComplete={handleUploadComplete}
+          onPostureScore={setLiveConfidence}
+          onVoiceScore={setLiveVoiceScore}
+          onRecordingStart={handleRecordingStart}
+          onRecordingStop={handleRecordingStop}
+        />
       </div>
     </div>
   );

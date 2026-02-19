@@ -8,6 +8,8 @@ export default function VideoRecorder({
   onUploadComplete,
   onPostureScore,
   onVoiceScore,
+  onRecordingStart,
+  onRecordingStop
 }) {
   const videoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -16,6 +18,7 @@ export default function VideoRecorder({
   const [stream, setStream] = useState(null);
   const [recording, setRecording] = useState(false);
   const [videoURL, setVideoURL] = useState(null);
+  const [emotion, setEmotion] = useState("Neutral"); // ⭐ Emotion state
 
   // ----------------------------
   // INIT CAMERA + MIC
@@ -54,6 +57,10 @@ export default function VideoRecorder({
     if (!stream) return;
 
     chunksRef.current = [];
+    setVideoURL(null);
+    setEmotion("Neutral"); // ⭐ Reset emotion each recording
+
+    onRecordingStart?.();
 
     const recorder = new MediaRecorder(stream, {
       mimeType: "video/webm",
@@ -83,9 +90,6 @@ export default function VideoRecorder({
           "http://localhost:5000/api/analyze-interview",
           {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem("marg_token")}`,
-            },
             body: formData,
           }
         );
@@ -97,10 +101,7 @@ export default function VideoRecorder({
           return;
         }
 
-        // Send analysis to parent (MockInterview)
-        if (onUploadComplete) {
-          onUploadComplete(data);
-        }
+        onUploadComplete?.(data);
 
       } catch (err) {
         console.error("Upload error:", err);
@@ -116,8 +117,9 @@ export default function VideoRecorder({
   // STOP RECORDING
   // ----------------------------
   const stopRecording = () => {
-    mediaRecorderRef.current.stop();
+    mediaRecorderRef.current?.stop();
     setRecording(false);
+    onRecordingStop?.();
   };
 
   return (
@@ -132,11 +134,17 @@ export default function VideoRecorder({
         style={{ width: "100%", borderRadius: "12px" }}
       />
 
+      {/* ⭐ Emotion Display */}
+      <p style={{ marginTop: 8 }}>Emotion detected: {emotion}</p>
+
       {/* 👇 Only run analyzers while recording */}
       {recording && (
         <PostureAnalyzer
           videoRef={videoRef}
-          onScoreUpdate={onPostureScore}
+          onScoreUpdate={(score, emotionValue) => {
+            onPostureScore?.(score);
+            setEmotion(emotionValue);
+          }}
         />
       )}
 

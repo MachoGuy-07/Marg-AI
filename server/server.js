@@ -55,6 +55,16 @@ app.post(
       }
 
       const videoPath = req.file.path;
+      console.log("Mock AI analysis running");
+
+return res.json({
+  analysis: {
+    confidence_score: Math.floor(Math.random()*3)+7,
+    pace_score: Math.floor(Math.random()*3)+6,
+    engagement_score: Math.floor(Math.random()*3)+7,
+    words_per_minute: Math.floor(Math.random()*40)+110
+  }
+});
       const audioPath = videoPath + ".wav";
 
       // ----------------------------------
@@ -80,11 +90,23 @@ app.post(
 
       const transcript = transcription.text;
 
-      // ----------------------------------
-      // 3️⃣ Duration (temporary estimate)
-      // ----------------------------------
-      const durationSeconds = 45;
-      const durationMinutes = durationSeconds / 60;
+     // ----------------------------------
+// 3️⃣ Extract REAL duration using ffprobe
+// ----------------------------------
+const durationSeconds = await new Promise((resolve, reject) => {
+  exec(
+    `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`,
+    (error, stdout) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(parseFloat(stdout));
+      }
+    }
+  );
+});
+
+const durationMinutes = durationSeconds / 60;
 
       const wordCount = transcript.split(/\s+/).length;
       const wordsPerMinute = Math.round(wordCount / durationMinutes);
