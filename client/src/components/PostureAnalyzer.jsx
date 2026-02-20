@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import { FaceMesh } from "@mediapipe/face_mesh";
 
 export default function PostureAnalyzer({ videoRef, onScoreUpdate }) {
-  const faceMeshRef = useRef(null);
   const intervalRef = useRef(null);
 
   const faceFrames = useRef(0);
@@ -30,49 +29,53 @@ export default function PostureAnalyzer({ videoRef, onScoreUpdate }) {
     faceMesh.onResults((results) => {
       totalFrames.current++;
 
-      if (results.multiFaceLandmarks) {
-        faceFrames.current++;
+      if (!results.multiFaceLandmarks) return;
 
-        const landmarks = results.multiFaceLandmarks[0];
+      faceFrames.current++;
 
-        const leftEye = landmarks[33];
-        const rightEye = landmarks[263];
-        const nose = landmarks[1];
+      const landmarks = results.multiFaceLandmarks[0];
 
-        // ⭐ EMOTION DETECTION
-        let emotion = "Neutral";
-        const eyeHeight = Math.abs(leftEye.y - rightEye.y);
+      const leftEye = landmarks[33];
+      const rightEye = landmarks[263];
+      const nose = landmarks[1];
 
-        if (eyeHeight < 0.01) emotion = "Nervous";
-        else if (eyeHeight > 0.03) emotion = "Confident";
+      // ⭐ FACE WIDTH NORMALIZATION
+      const faceWidth = Math.abs(landmarks[234].x - landmarks[454].x);
 
-        // ⭐ EYE CONTACT
-        const eyeCenterX = (leftEye.x + rightEye.x) / 2;
-        const gazeOffset = Math.abs(nose.x - eyeCenterX);
-        const eyeScore = 1 - Math.min(gazeOffset * 3, 1);
+      // ⭐ MOUTH WIDTH (CHEEK RISE SMILE DETECTOR)
+      const leftMouth = landmarks[61];
+      const rightMouth = landmarks[291];
+      const mouthWidth = Math.abs(leftMouth.x - rightMouth.x) / faceWidth;
 
-        // ⭐ HEAD MOVEMENT
-        if (lastNose.current) {
-          const dx = nose.x - lastNose.current.x;
-          const dy = nose.y - lastNose.current.y;
-          headMovement.current += Math.sqrt(dx * dx + dy * dy);
-        }
-        lastNose.current = nose;
+      console.log("MouthWidth:", mouthWidth.toFixed(3));
 
-        const engagement = faceFrames.current / totalFrames.current;
-        const stability = Math.max(0, 1 - headMovement.current * 5);
+      // ⭐ SMILE LOGIC (PERSONALIZED)
+      let emotion = "Neutral";
+      if (mouthWidth > 0.39) emotion = "Smile";
 
-        const postureScore =
-          eyeScore * 0.4 +
-          engagement * 0.3 +
-          stability * 0.3;
+      // ⭐ EYE CONTACT SCORE
+      const eyeCenterX = (leftEye.x + rightEye.x) / 2;
+      const gazeOffset = Math.abs(nose.x - eyeCenterX);
+      const eyeScore = 1 - Math.min(gazeOffset * 3, 1);
 
-        // ⭐ SEND BOTH SCORE + EMOTION
-        onScoreUpdate?.(postureScore, emotion);
+      // ⭐ HEAD MOVEMENT
+      if (lastNose.current) {
+        const dx = nose.x - lastNose.current.x;
+        const dy = nose.y - lastNose.current.y;
+        headMovement.current += Math.sqrt(dx * dx + dy * dy);
       }
-    });
+      lastNose.current = nose;
 
-    faceMeshRef.current = faceMesh;
+      const engagement = faceFrames.current / totalFrames.current;
+      const stability = Math.max(0, 1 - headMovement.current * 5);
+
+      const postureScore =
+        eyeScore * 0.4 +
+        engagement * 0.3 +
+        stability * 0.3;
+
+      onScoreUpdate?.(postureScore, emotion);
+    });
 
     intervalRef.current = setInterval(async () => {
       if (videoRef.current.readyState >= 2) {
