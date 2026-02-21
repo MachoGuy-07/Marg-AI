@@ -1,13 +1,19 @@
 // -----------------------------
 // IMPORTS
 // -----------------------------
+import authRoutes from "./routes/auth.js";
 import cors from "cors";
+import testResultRoutes from "./routes/testResultRoutes.js";
 import express from "express";
 import multer from "multer";
 import dotenv from "dotenv";
 import { exec } from "child_process";
 import fs from "fs";
-import OpenAI from "openai";
+import mongoose from "mongoose";
+
+mongoose.connect("mongodb://127.0.0.1:27017/ai-interview")
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ Mongo Error:", err));
 
 /// -----------------------------
 // CONFIG
@@ -24,7 +30,13 @@ app.use(cors({
   credentials: true
 }));
 
+
 app.use(express.json());
+
+app.use("/api/auth", authRoutes);
+app.use("/api/test-results", testResultRoutes);
+
+
 
 
 

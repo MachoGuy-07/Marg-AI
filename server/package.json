@@ -4,14 +4,20 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
-  },
+  "start": "nodemon server.js"
+},
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
+    "mongoose": "^9.2.1",
     "multer": "^2.0.2",
     "openai": "^4.104.0",
     "vm2": "^3.9.11"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.13"
   }
 }

@@ -10,6 +10,41 @@ export default function Report(){
   const analysis = storedAnalysis ? JSON.parse(storedAnalysis) : null;
   const transcript = storedTranscript || "Transcript not captured";
 
+  // ✅ NEW: Save Test Function
+  const handleSaveTest = async () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user"));
+
+      if (!user) {
+        alert("Please login first");
+        return;
+      }
+
+      const response = await fetch("http://localhost:5000/api/test-results/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: user._id,
+          confidence: analysis.confidence_score || 0,
+          pace: analysis.pace_score || 0,
+          engagement: analysis.engagement_score || 0,
+        }),
+      });
+
+      if (response.ok) {
+        alert("Test saved successfully ✅");
+      } else {
+        alert("Failed to save test");
+      }
+
+    } catch (error) {
+      console.error("Save error:", error);
+      alert("Something went wrong");
+    }
+  };
+
   if(!analysis) return <h2 style={{padding:40}}>No report found</h2>;
 
   return (
@@ -17,7 +52,9 @@ export default function Report(){
 
       {/* HEADER */}
       <div className="report-header">
-        <h2>🤖 AI Interview Report</h2>
+        <h1 className="report-title">
+          Interview Performance Report
+        </h1>
         <p>Date: {new Date().toDateString()}</p>
       </div>
 
@@ -37,7 +74,42 @@ export default function Report(){
             <p>{transcript}</p>
           </div>
 
-          <button className="download-btn">Download Report</button>
+          {/* ✅ NEW SAVE BUTTON */}
+          <button
+            className="report-download-btn"
+            style={{ marginTop: "15px" }}
+            onClick={handleSaveTest}
+          >
+            Save Test Record
+          </button>
+
+          {/* DOWNLOAD BUTTON (UNCHANGED) */}
+          <button
+            className="report-download-btn"
+            onClick={() => {
+              const analysis = localStorage.getItem("report_analysis");
+              const transcript = localStorage.getItem("report_transcript");
+
+              const blob = new Blob(
+                [
+                  "Interview Performance Report\n\n",
+                  "Analysis:\n",
+                  analysis,
+                  "\n\nTranscript:\n",
+                  transcript
+                ],
+                { type: "text/plain" }
+              );
+
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "interview-report.txt";
+              a.click();
+            }}
+          >
+            Download Report
+          </button>
 
         </div>
 
@@ -60,7 +132,6 @@ export default function Report(){
 function Score({ title, value }){
   const [animated, setAnimated] = useState(0);
 
-  // ⭐ Animation fill
   useEffect(()=>{
     let i = 0;
     const interval = setInterval(()=>{
@@ -74,10 +145,9 @@ function Score({ title, value }){
 
   const percent = animated * 10;
 
-  // ⭐ Auto color logic
-  let color = "#ef4444"; // red
-  if(value>=7) color="#10b981"; // green
-  else if(value>=5) color="#f59e0b"; // yellow
+  let color = "#ef4444";
+  if(value>=7) color="#10b981";
+  else if(value>=5) color="#f59e0b";
 
   return (
     <div
@@ -97,7 +167,6 @@ function Score({ title, value }){
     >
       <h4>{title}</h4>
 
-      {/* ⭐ Circle */}
       <div
         style={{
           width:120,
@@ -129,7 +198,6 @@ function Score({ title, value }){
         </div>
       </div>
 
-      {/* ⭐ Progress bar */}
       <div
         style={{
           height:8,
