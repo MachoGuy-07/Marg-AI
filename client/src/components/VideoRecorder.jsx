@@ -24,9 +24,11 @@ export default function VideoRecorder({
   // INIT CAMERA + MIC
   // ----------------------------
   useEffect(() => {
+    let mediaStream = null;
+
     async function initCamera() {
       try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
+        mediaStream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
         });
@@ -44,8 +46,8 @@ export default function VideoRecorder({
     initCamera();
 
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => track.stop());
       }
     };
   }, []);

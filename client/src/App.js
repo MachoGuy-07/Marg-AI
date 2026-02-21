@@ -1,40 +1,32 @@
-// client/src/App.js
-
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-
-// Pages
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Home from "./pages/Home";
-import Practice from "./pages/Practice";
 import MockInterview from "./pages/MockInterview";
-import TopicPractice from "./pages/TopicPractice";
+import Practice from "./pages/Practice";
 import Report from "./pages/Report";
-
-// Styles
+import TopicPractice from "./pages/TopicPractice";
 import "./styles/home.css";
 
 export default function App() {
+  const siteBgUrl = `${process.env.PUBLIC_URL || ""}/space-bg.png`;
+
   return (
-    <BrowserRouter>
-      <Routes>
-
-        {/* 🏠 Landing Page */}
-        <Route path="/" element={<Home />} />
-
-        {/* 📘 Practice Section */}
-        <Route path="/practice" element={<Practice />} />
-        <Route path="/practice/:topic" element={<TopicPractice />} />
-
-        {/* 🎤 Mock Interview */}
-        <Route path="/mock-interview" element={<MockInterview />} />
-
-        {/* 📄 AI Report */}
-        <Route path="/report" element={<Report />} />
-
-        {/* ⭐ Future: 404 fallback */}
-        {/* <Route path="*" element={<h2>Page not found</h2>} /> */}
-
-      </Routes>
-    </BrowserRouter>
+    <div
+      className="site-shell"
+      style={{ "--site-bg-image": `url(${siteBgUrl})` }}
+    >
+      <div className="site-bg-layer" aria-hidden="true" />
+      <div className="site-page">
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/practice" element={<Practice />} />
+            <Route path="/practice/:topic" element={<TopicPractice />} />
+            <Route path="/mock-interview" element={<MockInterview />} />
+            <Route path="/report" element={<Report />} />
+          </Routes>
+        </BrowserRouter>
+      </div>
+    </div>
   );
 }

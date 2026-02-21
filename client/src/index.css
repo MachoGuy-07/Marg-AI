@@ -1,6 +1,10 @@
 /* index.css - drop into client/src and import in App.js */
 
 /* reset */
+body {
+  margin: 0;
+  background: url("../../public/space-bg.png") center / cover no-repeat fixed;
+}
 * { box-sizing: border-box; }
 html,body,#root { height: 100%; margin: 0; font-family: 'Georgia', 'Times New Roman', serif; color: #111827; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
 

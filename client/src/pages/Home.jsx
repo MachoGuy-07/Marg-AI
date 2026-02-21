@@ -6,7 +6,11 @@ export default function Home() {
   const navigate = useNavigate();
   const [slideDirection, setSlideDirection] = useState(null);
   const videoRef = useRef(null);
+  const starBgUrl = `${process.env.PUBLIC_URL || ""}/space-bg.png`;
 
+  /* =====================================
+     ROUTE TRANSITION
+  ===================================== */
   const triggerTransition = (route) => {
     setSlideDirection("slide-left");
 
@@ -15,22 +19,30 @@ export default function Home() {
     }, 600);
   };
 
-  /* 🎥 Webcam auto start */
+  /* =====================================
+     🎥 WEBCAM AUTO START
+  ===================================== */
   useEffect(() => {
     if (navigator.mediaDevices && videoRef.current) {
-      navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => {
+      navigator.mediaDevices
+        .getUserMedia({ video: true })
+        .then((stream) => {
           videoRef.current.srcObject = stream;
         })
-        .catch(err => console.log(err));
+        .catch((err) => console.log(err));
     }
   }, []);
 
+  /* =====================================
+     JSX
+  ===================================== */
   return (
     <div className={`home-root ${slideDirection || ""}`}>
       <div className="home-inner container">
 
-        {/* TOPBAR */}
+        {/* =====================================
+           TOPBAR
+        ===================================== */}
         <header className="topbar">
           <div className="brand">
             <img src="/logo192.png" alt="Marg AI" className="brand-logo" />
@@ -41,103 +53,122 @@ export default function Home() {
           </div>
         </header>
 
-        {/* HERO */}
-        <section className="hero">
+        {/* =====================================
+           HERO SECTION
+        ===================================== */}
+        <section
+          className="hero"
+          style={{ "--hero-image": `url(${starBgUrl})` }}
+        >
 
-          {/* LEFT */}
-          <div className="hero-left">
-            <h1 className="hero-title">
-              Practice interviews. <br />
-              Get feedback. <br />
-              Land the job.
-            </h1>
+          {/* 🔮 GLASS WRAPPER */}
+          <div className="hero-glass">
 
-            <p className="hero-sub">
-              Instant AI feedback on code and communication —
-              video, audio and code analysis combined into one clean report.
-            </p>
+            {/* =====================================
+               LEFT TEXT BLOCK
+            ===================================== */}
+            <div className="hero-left">
+              <h1 className="hero-title">
+                Practice interviews. <br />
+                Get feedback. <br />
+                Land the job.
+              </h1>
 
-            <div className="hero-ctas">
-              <button
-                className="btn primary"
-                onClick={() => triggerTransition("/mock-interview")}
-              >
-                Start Mock Interview
-              </button>
+              <p className="hero-sub">
+                Instant AI feedback on code and communication —
+                video, audio and code analysis combined into one clean report.
+              </p>
 
-              <button
-                className="btn secondary"
-                onClick={() => triggerTransition("/practice")}
-              >
-                Practice Coding
-              </button>
+              <div className="hero-ctas">
+                <button
+                  className="btn primary"
+                  onClick={() => triggerTransition("/mock-interview")}
+                >
+                  Start Mock Interview
+                </button>
+
+                <button
+                  className="btn secondary"
+                  onClick={() => triggerTransition("/practice")}
+                >
+                  Practice Coding
+                </button>
+              </div>
             </div>
-          </div>
 
-          {/* RIGHT AI PANEL */}
-          <div className="hero-right">
-            <div className="ai-panel">
+{/* =====================================
+   RIGHT AI ANALYSIS PANEL
+===================================== */}
+<div className="hero-right">
+  <div className="ai-panel">
 
-              {/* window header dots */}
-              <div className="ai-header">
-                <span></span><span></span><span></span>
-              </div>
+    {/* Header dots */}
+    <div className="ai-header">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
 
-              {/* webcam */}
-              <div className="ai-video-box">
-                <video
-                  ref={videoRef}
-                  className="webcam"
-                  autoPlay
-                  muted
-                  playsInline
-                />
-                <div className="face-box"></div>
-              </div>
+    {/* Webcam */}
+    <div className="ai-video-box">
+      <video
+        ref={videoRef}
+        className="webcam"
+        autoPlay
+        muted
+        playsInline
+      />
+      <div className="face-box"></div>
+    </div>
 
-              {/* stats */}
-              <div className="ai-stats">
+    {/* Stats */}
+    <div className="ai-stats">
 
-                <div className="stat-row">
-                  <span>💬 Communication</span>
-                  <span>92%</span>
-                </div>
-                <div className="slider"><div style={{width:"92%"}}></div></div>
+      <div className="stat-row">
+        <span>💬 Communication</span>
+        <span>92%</span>
+      </div>
+      <div className="slider"><div style={{width:"92%"}}></div></div>
 
-                <div className="stat-row">
-                  <span>⚙️ Code Accuracy</span>
-                  <span>87%</span>
-                </div>
-                <div className="slider"><div style={{width:"87%"}}></div></div>
+      <div className="stat-row">
+        <span>⚙️ Code Accuracy</span>
+        <span>87%</span>
+      </div>
+      <div className="slider"><div style={{width:"87%"}}></div></div>
 
-                <div className="stat-row">
-                  <span>💜 Confidence</span>
-                  <span>High</span>
-                </div>
-                <div className="slider"><div style={{width:"80%"}}></div></div>
+      <div className="stat-row">
+        <span>💜 Confidence</span>
+        <span>High</span>
+      </div>
+      <div className="slider"><div style={{width:"80%"}}></div></div>
 
-              </div>
+    </div>
 
-              {/* waveform */}
-              <div className="wave-bars">
-  <span></span><span></span><span></span><span></span>
-  <span></span><span></span><span></span><span></span>
+    {/* Bar graph */}
+    <div className="bar-graph">
+      <span></span><span></span><span></span>
+      <span></span><span></span><span></span>
+      <span></span><span></span>
+    </div>
+
+    {/* Footer metrics */}
+    <div className="ai-footer">
+      <span>👁 Eye Contact</span>
+      <span>💻 Code Quality</span>
+      <span>🎧 Speaking Pace</span>
+    </div>
+
+    <div className="analyzing">Analyzing...</div>
+
+  </div>
 </div>
 
-              {/* bottom metrics */}
-              <div className="ai-footer">
-                <span>👁 Eye Contact</span>
-                <span>💻 Code Quality</span>
-                <span>🎧 Speaking Pace</span>
-              </div>
-
-              <div className="analyzing">Analyzing...</div>
-
-            </div>
           </div>
-
         </section>
 
+        {/* =====================================
+           FOOTER
+        ===================================== */}
         <footer className="home-footer">
           © {new Date().getFullYear()} Marg AI
         </footer>

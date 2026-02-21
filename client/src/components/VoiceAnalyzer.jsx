@@ -1,6 +1,6 @@
 // client/src/components/VoiceAnalyzer.jsx
 
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 
 export default function VoiceAnalyzer({ stream, onVoiceScore }) {
   const audioContextRef = useRef(null);

@@ -10,6 +10,7 @@ import dotenv from "dotenv";
 import { exec } from "child_process";
 import fs from "fs";
 import mongoose from "mongoose";
+import OpenAI from "openai";
 
 mongoose.connect("mongodb://127.0.0.1:27017/ai-interview")
   .then(() => console.log("✅ MongoDB Connected"))
@@ -43,9 +44,9 @@ app.use("/api/test-results", testResultRoutes);
 // -----------------------------
 // OPENAI SETUP
 // -----------------------------
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 // -----------------------------
 // MULTER SETUP
