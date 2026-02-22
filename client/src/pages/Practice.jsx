@@ -1,188 +1,142 @@
 import React, { useState } from "react";
-import PracticeConsole from "../components/PracticeConsole";
-import QuestionBank from "../components/QuestionBank";
-import "../styles/home.css";
+import { useNavigate } from "react-router-dom";
+import "../styles/practice.css";
+import {
+  FaCode,
+  FaProjectDiagram,
+  FaBrain,
+  FaLink,
+  FaLayerGroup,
+  FaNetworkWired,
+  FaList,
+  FaRandom,
+  FaCubes,
+  FaStream,
+  FaDatabase,
+  FaSitemap,
+  FaThLarge,
+  FaBoxOpen
+} from "react-icons/fa";
 
-const TOPICS = [
-  "Backtracking",
-  "Binary Tree",
-  "Dynamic Programming",
-  "Graph",
-  "Greedy",
-  "Hashing",
-  "Heap",
-  "Linked Lists",
-  "Matrix",
-  "Sliding Window",
-  "Stack",
-  "Two Pointers",
-  "Trie",
-  "Misc",
+const topics = [
+  { name: "Backtracking", icon: <FaProjectDiagram /> },
+  { name: "Binary Tree", icon: <FaSitemap /> },
+  { name: "Dynamic Programming", icon: <FaBrain /> },
+  { name: "Greedy", icon: <FaRandom /> },
+  { name: "Graph", icon: <FaNetworkWired /> },
+  { name: "Heap", icon: <FaLayerGroup /> },
+  { name: "Hashing", icon: <FaDatabase /> },
+  { name: "Linked Lists", icon: <FaLink /> },
+  { name: "Matrix", icon: <FaThLarge /> },
+  { name: "Sliding Window", icon: <FaStream /> },
+  { name: "Two Pointers", icon: <FaCode /> },
+  { name: "Stack", icon: <FaCubes /> },
+  { name: "Trie", icon: <FaBoxOpen /> },
+  { name: "Misc", icon: <FaList /> }
 ];
 
+const difficulties = ["Easy", "Medium", "Hard"];
+
+
+
 export default function Practice() {
-  const [language, setLanguage] = useState("javascript");
-  const [selectedCode, setSelectedCode] = useState("");
-  const [mode, setMode] = useState("topic"); // topic | difficulty
-  const [selectedTopic, setSelectedTopic] = useState(null);
+  const [mode, setMode] = useState("topic");
+  const [language, setLanguage] = useState("Python");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const navigate = useNavigate();
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        padding: "40px",
-        background: "linear-gradient(135deg,#f8fafc,#eef2ff)",
-        fontFamily: "Inter, sans-serif",
-      }}
-    >
-      {/* TOP BAR */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "35px",
-        }}
-      >
-        <h1 style={{ margin: 0 }}>💻 Practice Coding</h1>
+    <div className="practice-page">
+      <div className="practice-container-box">
 
-        <div style={{ display: "flex", gap: "15px" }}>
-          <button
-            onClick={() => setMode("topic")}
-            style={{
-              padding: "10px 20px",
-              borderRadius: "25px",
-              border: "none",
-              cursor: "pointer",
-              background: mode === "topic" ? "#3b82f6" : "#e2e8f0",
-              color: mode === "topic" ? "#fff" : "#1e293b",
-              fontWeight: 600,
-            }}
-          >
-            Topic Wise
-          </button>
+        {/* ================= HEADER ================= */}
+        <div className="practice-header">
+          <h2>Practice Coding</h2>
 
-          <button
-            onClick={() => setMode("difficulty")}
-            style={{
-              padding: "10px 20px",
-              borderRadius: "25px",
-              border: "none",
-              cursor: "pointer",
-              background: mode === "difficulty" ? "#3b82f6" : "#e2e8f0",
-              color: mode === "difficulty" ? "#fff" : "#1e293b",
-              fontWeight: 600,
-            }}
-          >
-            Difficulty Wise
-          </button>
-        </div>
-      </div>
+          <div className="header-right">
 
-      {/* LANGUAGE SELECT */}
-      <div style={{ marginBottom: "30px" }}>
-        <select
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-          style={{
-            padding: "10px 18px",
-            borderRadius: 14,
-            border: "1px solid #e2e8f0",
-            background: "#fff",
-            fontWeight: 500,
-            cursor: "pointer",
-            boxShadow: "0 5px 20px rgba(0,0,0,0.04)",
+            {/* Language Dropdown */}
+            <div className="custom-dropdown">
+  <div
+    className="dropdown-selected"
+    onClick={() => setShowDropdown(!showDropdown)}
+  >
+    {language} ▾
+  </div>
+
+  {showDropdown && (
+    <div className="dropdown-menu">
+      {["Python", "Java", "C++","C"].map((lang) => (
+        <div
+          key={lang}
+          className="dropdown-item"
+          onClick={() => {
+            setLanguage(lang);
+            setShowDropdown(false);
           }}
         >
-          <option value="javascript">JavaScript</option>
-          <option value="python">Python</option>
-          <option value="java">Java</option>
-        </select>
-      </div>
+          {lang}
+        </div>
+      ))}
+    </div>
+  )}
+</div>
 
-      {/* MAIN SECTION */}
-      {mode === "topic" ? (
-        <div style={{ marginBottom: "40px" }}>
-          <h2 style={{ marginBottom: "20px" }}>📚 Topics</h2>
+            {/* Toggle Switch */}
+            <div className="toggle-wrapper">
+              <span className={mode === "topic" ? "active" : ""}>
+                Topic Wise
+              </span>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-              gap: "20px",
-            }}
-          >
-            {TOPICS.map((topic) => (
               <div
-                key={topic}
-                onClick={() => setSelectedTopic(topic)}
-                style={{
-                  padding: "20px",
-                  borderRadius: "20px",
-                  background:
-                    selectedTopic === topic
-                      ? "linear-gradient(135deg,#3b82f6,#6366f1)"
-                      : "#ffffff",
-                  color:
-                    selectedTopic === topic ? "#fff" : "#1e293b",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  textAlign: "center",
-                  boxShadow:
-                    "0 15px 40px rgba(59,130,246,0.08)",
-                  transition: "all 0.2s ease",
-                }}
+                className={`toggle-switch ${
+                  mode === "difficulty" ? "right" : ""
+                }`}
+                onClick={() =>
+                  setMode(mode === "topic" ? "difficulty" : "topic")
+                }
               >
-                {topic}
+                <div className="toggle-circle"></div>
               </div>
-            ))}
+
+              <span className={mode === "difficulty" ? "active" : ""}>
+                Difficulty
+              </span>
+            </div>
+
           </div>
         </div>
-      ) : (
-        <div style={{ marginBottom: "40px" }}>
-          <h2>📊 Difficulty Levels</h2>
-          {/* We will implement this next */}
-        </div>
-      )}
 
-      {/* QUESTION + CONSOLE */}
-      <div
-        style={{
-          display: "flex",
-          gap: "40px",
-        }}
-      >
+        {/* ================= GRID ================= */}
+        <div className="practice-grid">
+  {mode === "topic"
+    ? topics.map((item, idx) => (
         <div
-          style={{
-            flex: 0.9,
-            background: "#ffffff",
-            padding: 30,
-            borderRadius: 25,
-            boxShadow: "0 20px 60px rgba(59,130,246,0.08)",
-          }}
-        >
-          <h3>🧠 Questions</h3>
-          <QuestionBank
-            topic={selectedTopic}
-            onSelect={setSelectedCode}
-          />
+  key={idx}
+  className="practice-card"
+  onClick={() =>
+  navigate(
+    `/practice/${item.name
+      .toLowerCase()
+      .replace(/\s+/g, "-")}`
+  )
+}
+>
+          <div className="card-icon">{item.icon}</div>
+          <div>{item.name}</div>
+        </div>
+      ))
+            : difficulties.map((lvl, idx) => (
+                <div
+  key={idx}
+  className="practice-card difficulty"
+  onClick={() => navigate(`/practice/${lvl}`)}
+>
+                  {lvl}
+                </div>
+              ))}
         </div>
 
-        <div
-          style={{
-            flex: 1.3,
-            background: "#ffffff",
-            padding: 30,
-            borderRadius: 25,
-            boxShadow: "0 20px 60px rgba(59,130,246,0.08)",
-          }}
-        >
-          <h3>💻 Code Workspace</h3>
-          <PracticeConsole
-            language={language}
-            externalCode={selectedCode}
-          />
-        </div>
       </div>
     </div>
   );
