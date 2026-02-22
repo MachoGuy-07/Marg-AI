@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { FaceMesh } from "@mediapipe/face_mesh";
 
-export default function PostureAnalyzer({ videoRef, onScoreUpdate }) {
+export default function PostureAnalyzer({ videoRef, onScoreUpdate, onMetrics }) {
 
   const intervalRef = useRef(null);
   const meshRef = useRef(null);
@@ -70,15 +70,23 @@ export default function PostureAnalyzer({ videoRef, onScoreUpdate }) {
 
       lastNose.current = nose;
 
-      const engagement = faceFrames.current / totalFrames.current;
-      const stability = Math.max(0, 1 - headMovement.current * 5);
+      const engagement = clamp01(faceFrames.current / totalFrames.current);
+      const stability = clamp01(1 - headMovement.current * 5);
 
-      const postureScore =
-        eyeScore * 0.4 +
-        engagement * 0.3 +
-        stability * 0.3;
+      const postureScore = clamp01(
+        eyeScore * 0.4 + engagement * 0.3 + stability * 0.3
+      );
 
-      onScoreUpdate?.(postureScore, emotion);
+      const metrics = {
+        eyeContact: clamp01(eyeScore),
+        engagement,
+        stability,
+        postureScore,
+        emotion,
+      };
+
+      onScoreUpdate?.(postureScore, emotion, metrics);
+      onMetrics?.(metrics);
     });
 
     intervalRef.current = setInterval(async () => {
@@ -113,7 +121,11 @@ export default function PostureAnalyzer({ videoRef, onScoreUpdate }) {
       }
     };
 
-  }, [videoRef, onScoreUpdate]);
+  }, [videoRef, onMetrics, onScoreUpdate]);
 
   return null;
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
 }

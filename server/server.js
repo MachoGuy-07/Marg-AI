@@ -69,16 +69,27 @@ app.post(
 
       const videoPath = req.file.path;
       console.log("Mock AI analysis running");
-
-return res.json({
-  analysis: {
-    confidence_score: Math.floor(Math.random()*3)+7,
-    pace_score: Math.floor(Math.random()*3)+6,
-    engagement_score: Math.floor(Math.random()*3)+7,
-    words_per_minute: Math.floor(Math.random()*40)+110
-  }
-});
       const audioPath = videoPath + ".wav";
+
+      if (!openai) {
+        fs.unlinkSync(videoPath);
+        return res.json({
+          success: true,
+          analysis: {
+            transcript: "",
+            words_per_minute: 0,
+            filler_count: 0,
+            confidence_score: 6,
+            pace_score: 6,
+            clarity_score: 6,
+            final_score: 6,
+            ai_feedback: [
+              "Server-side transcript analysis is disabled because OPENAI_API_KEY is not set.",
+              "Live client metrics are still available in real time during the interview."
+            ]
+          }
+        });
+      }
 
       // ----------------------------------
       // 1️⃣ Extract audio using FFMPEG
@@ -175,34 +186,31 @@ const durationMinutes = durationSeconds / 60;
       );
 
       // ----------------------------------
-      // 6️⃣ Engagement Scoring
+      // 6️⃣ Clarity Scoring
       // ----------------------------------
-      const engagementKeywords = [
-        "excited",
-        "learned",
-        "improved",
-        "team",
-        "growth",
-        "impact",
-        "initiative",
-        "challenge",
-        "passion",
-        "curious",
-        "collaborated",
-        "mentored",
-        "helped",
-        "contributed",
-      ];
+      const sentenceCount = Math.max(
+        1,
+        (transcript.match(/[.!?]+/g) || []).length
+      );
+      const avgWordsPerSentence = wordCount / sentenceCount;
+      const uniqueWords = new Set(
+        transcript.toLowerCase().match(/\b[a-z']+\b/g) || []
+      ).size;
+      const lexicalDiversity = uniqueWords / Math.max(1, wordCount);
 
-      let engagementMatches = 0;
-      engagementKeywords.forEach((word) => {
-        if (transcript.toLowerCase().includes(word)) {
-          engagementMatches++;
-        }
-      });
+      const sentenceStructurePenalty = Math.min(
+        3.2,
+        Math.abs(avgWordsPerSentence - 14) * 0.28
+      );
 
-      let engagementScore = 4 + Math.min(6, engagementMatches);
-      engagementScore = Math.max(1, Math.min(10, engagementScore));
+      let clarityScore =
+        8.2 +
+        (paceScore >= 8 ? 0.7 : 0.2) +
+        (lexicalDiversity - 0.45) * 5.2 -
+        fillerWords * 0.22 -
+        sentenceStructurePenalty;
+
+      clarityScore = Math.max(1, Math.min(10, Math.round(clarityScore)));
 
       // ----------------------------------
       // 7️⃣ Final Score
@@ -210,7 +218,7 @@ const durationMinutes = durationSeconds / 60;
       const finalScore = Math.round(
         confidenceScore * 0.4 +
         paceScore * 0.3 +
-        engagementScore * 0.3
+        clarityScore * 0.3
       );
 
       // ----------------------------------
@@ -227,7 +235,7 @@ const durationMinutes = durationSeconds / 60;
           filler_count: fillerWords,
           confidence_score: confidenceScore,
           pace_score: paceScore,
-          engagement_score: engagementScore,
+          clarity_score: clarityScore,
           final_score: finalScore,
         },
       });

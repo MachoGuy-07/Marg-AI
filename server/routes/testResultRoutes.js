@@ -6,13 +6,13 @@ const router = express.Router();
 // Save test result
 router.post("/save", async (req, res) => {
   try {
-    const { userId, confidence, pace, engagement } = req.body;
+    const { userId, confidence, pace, clarity, engagement } = req.body;
 
     const newResult = new TestResult({
       user: userId,
       confidence,
       pace,
-      engagement,
+      clarity: clarity ?? engagement ?? 0,
     });
 
     await newResult.save();
