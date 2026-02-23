@@ -1,5 +1,5 @@
 /* Global app shell with space background */
-body {
+.home-root {
   background: url("../../public/image.png") center / cover no-repeat fixed;
 }
 .site-shell {

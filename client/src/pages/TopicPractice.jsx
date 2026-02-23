@@ -1,386 +1,230 @@
-import React, { useState } from "react";
-import PracticeConsole from "../components/PracticeConsole";
-
-const BACKTRACKING_QUESTIONS = [
-  {
-    title: "Letter Combinations of a Phone Number",
-    difficulty: "Medium",
-    description: `
-Given a string containing digits from 2-9 inclusive, return all possible letter combinations.
-
-Example:
-Input: digits = "23"
-Output: ["ad","ae","af","bd","be","bf","cd","ce","cf"]
-
-Constraints:
-1 <= digits.length <= 4
-digits[i] is in ['2','9']
-    `,
-  },
-  {
-    title: "Generate Parentheses",
-    difficulty: "Medium",
-    description: `
-Given n pairs of parentheses, generate all combinations of well-formed parentheses.
-
-Example:
-Input: n = 3
-Output: ["((()))","(()())","(())()","()(())","()()()"]
-
-Constraints:
-1 <= n <= 8
-    `,
-  },
-  {
-    title: "Combination Sum",
-    difficulty: "Medium",
-    description: `
-Given an array of distinct integers and a target, return all unique combinations that sum to target.
-
-Example:
-Input: candidates = [2,3,6,7], target = 7
-Output: [[2,2,3],[7]]
-    `,
-  },
-  {
-    title: "Permutations",
-    difficulty: "Medium",
-    description: `
-Given an array of distinct integers, return all possible permutations.
-
-Example:
-Input: nums = [1,2,3]
-Output:
-[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
-    `,
-  },
-  {
-    title: "N-Queens",
-    difficulty: "Hard",
-    description: `
-Place n queens on an n x n board such that no two queens attack each other.
-
-Return all distinct solutions.
-
-'Q' = queen
-'.' = empty space
-
-Example:
-Input: n = 4
-Output:
-[
- [".Q..","...Q","Q...","..Q."],
- ["..Q.","Q...","...Q",".Q.."]
-]
-    `,
-    image: "/nqueens.png",
-  },
-  {
-    title: "Subsets",
-    difficulty: "Medium",
-    description: `
-Given an integer array of unique elements, return all possible subsets (power set).
-
-Example:
-Input: nums = [1,2,3]
-Output:
-[[],[1],[2],[1,2],[3],[1,3],[2,3],[1,2,3]]
-    `,
-  },
-  {
-    title: "Palindrome Partitioning",
-    difficulty: "Medium",
-    description: `
-Given a string s, partition s such that every substring is a palindrome.
-
-Example:
-Input: s = "aab"
-Output: [["a","a","b"],["aa","b"]]
-    `,
-  },
-];
+import React, { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
+import Editor from "@monaco-editor/react";
+import { questions } from "../data/questions";
+import "../styles/topicPractice.css";
 
 export default function TopicPractice() {
-  const questions = BACKTRACKING_QUESTIONS;
+  const { topic } = useParams();
+
+  const filteredQuestions = questions.filter(
+    (q) => q.slug === topic || q.difficulty === topic
+  );
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [status, setStatus] = useState(
-    Array(questions.length).fill("unattempted")
-  );
-  const [showTick, setShowTick] = useState(false);
+  const [language, setLanguage] = useState("python");
+  const [activeTab, setActiveTab] = useState("testcases");
+  const [code, setCode] = useState("");
+  const [customInput, setCustomInput] = useState("");
+  const [time, setTime] = useState(0);
+  const [showLang, setShowLang] = useState(false);
 
-  // ---------------- PROGRESS ----------------
-  const completedCount = status.filter(
-    (s) => s === "correct" || s === "wrong"
-  ).length;
+  const question = filteredQuestions[currentIndex];
 
-  const percent = Math.round(
-    (completedCount / questions.length) * 100
-  );
-
-  // ---------------- SUBMIT ----------------
-  function handleSubmit() {
-    const updated = [...status];
-
-    // Simulated correctness (replace later with real check)
-    const isCorrect = Math.random() > 0.5;
-
-    updated[currentIndex] = isCorrect ? "correct" : "wrong";
-    setStatus(updated);
-
-    if (isCorrect) {
-      setShowTick(true);
-      setTimeout(() => setShowTick(false), 1200);
+  /* Load question */
+  useEffect(() => {
+    if (question) {
+      setCode(question.starterCode);
+      setTime(0);
     }
+  }, [question]);
+
+  /* Timer */
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTime((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!question) {
+    return (
+      <div style={{ color: "white", padding: "40px" }}>
+        No question found
+      </div>
+    );
   }
 
-  function handleNext() {
-    const updated = [...status];
+  const formatTime = () => {
+    const mins = Math.floor(time / 60);
+    const secs = time % 60;
+    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+  };
 
-    if (updated[currentIndex] === "unattempted") {
-      updated[currentIndex] = "skipped";
-      setStatus(updated);
-    }
-
-    if (currentIndex < questions.length - 1) {
+  const handleNext = () => {
+    if (currentIndex < filteredQuestions.length - 1) {
       setCurrentIndex(currentIndex + 1);
     }
-  }
+  };
 
-  function goToQuestion(index) {
-    setCurrentIndex(index);
-  }
+  const handleSkip = () => {
+    handleNext();
+  };
 
+  const handleSave = () => {
+    localStorage.setItem(`code-${question.id}`, code);
+    alert("Code saved!");
+  };
+
+const languageLabel = (lang) => {
+  switch (lang) {
+    case "python":
+      return "Python";
+    case "javascript":
+      return "JavaScript";
+    case "cpp":
+      return "C++";
+    case "java":
+      return "Java";
+    default:
+      return lang;
+  }
+};
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        background: "#f8fafc",
-        fontFamily: "Inter, sans-serif",
-      }}
-    >
-      {/* ---------------- PROGRESS HEADER ---------------- */}
-      <div
-        style={{
-          padding: "30px 40px",
-          background: "linear-gradient(135deg,#4f46e5,#6366f1)",
-          color: "#ffffff",
-        }}
-      >
-        <h2 style={{ marginBottom: 10 }}>
-          Programming for Problem Solving
-        </h2>
+    <div className="question-page">
 
-        <p style={{ fontSize: 14 }}>
-          Your Progress: <strong>{percent}% Completed</strong>
-        </p>
+      {/* ===== TOP BAR (FULL WIDTH CENTERED) ===== */}
+      <div className="question-topbar">
+        <div className="topbar-center">
 
-        <div
-          style={{
-            marginTop: 10,
-            height: 8,
-            background: "rgba(255,255,255,0.3)",
-            borderRadius: 20,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              width: `${percent}%`,
-              height: "100%",
-              background: "#22c55e",
-              transition: "0.5s ease",
-            }}
-          />
+          <div className="nav-section">
+            {filteredQuestions.map((_, index) => (
+              <div
+                key={index}
+                className={`nav-pill ${index === currentIndex ? "active" : ""}`}
+                onClick={() => setCurrentIndex(index)}
+              >
+                {index + 1}
+              </div>
+            ))}
+          </div>
+
+          <div className="timer-pill">
+            ⏱ {formatTime()}
+          </div>
+
+        </div>
+      </div>
+
+      {/* ===== MAIN CONTENT ROW ===== */}
+      <div className="question-main">
+
+        {/* LEFT PANEL */}
+        <div className="question-left">
+          <h2>{question.title}</h2>
+          <p>{question.description}</p>
         </div>
 
-        {percent === 100 && (
-          <div
-            style={{
-              marginTop: 15,
-              background: "#22c55e",
-              padding: "6px 15px",
-              borderRadius: 20,
-              display: "inline-block",
-              fontWeight: 600,
-            }}
-          >
-            ✅ Completed Topic
-          </div>
-        )}
-      </div>
+        {/* RIGHT PANEL */}
+        <div className="question-right">
 
-      {/* ---------------- QUESTION NUMBER BAR ---------------- */}
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          padding: "20px 40px",
-          borderBottom: "1px solid #e2e8f0",
-          background: "#ffffff",
-        }}
-      >
-        {questions.map((_, i) => {
-          const bg =
-            status[i] === "correct"
-              ? "#22c55e"
-              : status[i] === "wrong"
-              ? "#ef4444"
-              : status[i] === "skipped"
-              ? "#8b5cf6"
-                : "#cbd5e1";
+          <div className="editor-top">
+            <div className="custom-dropdown">
+  <div
+    className="dropdown-selected"
+    onClick={() => setShowLang((prev) => !prev)}
+  >
+    {languageLabel(language)} ▾
+  </div>
 
-          return (
-            <div
-              key={i}
-              onClick={() => goToQuestion(i)}
-              style={{
-                width: 42,
-                height: 42,
-                borderRadius: 10,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 700,
-                background: bg,
-                color:
-                  status[i] === "unattempted"
-                    ? "#1e293b"
-                    : "#ffffff",
-                cursor: "pointer",
-                boxShadow:
-                  currentIndex === i
-                    ? "0 0 0 3px rgba(99,102,241,0.3)"
-                    : "none",
-                transition: "0.3s ease",
-              }}
-            >
-              {i + 1}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ---------------- MAIN SPLIT VIEW ---------------- */}
-      <div style={{ display: "flex", flex: 1 }}>
-
-        {/* LEFT SIDE — PROBLEM */}
+  {showLang && (
+    <div className="dropdown-menu">
+      {["python", "javascript", "cpp", "java"].map((lang) => (
         <div
-          style={{
-            flex: 1,
-            padding: "40px",
-            overflowY: "auto",
-            background: "#ffffff",
-            borderRight: "1px solid #e2e8f0",
+          key={lang}
+          className="dropdown-item"
+          onClick={() => {
+            setLanguage(lang);
+            setShowLang(false);
           }}
         >
-          <h2 style={{ fontWeight: 700 }}>
-            {questions[currentIndex].title}
-          </h2>
+          {languageLabel(lang)}
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+          </div>
 
-          <span
-            style={{
-              padding: "4px 10px",
-              borderRadius: 20,
-              fontSize: 12,
-              marginTop: 10,
-              display: "inline-block",
-              background:
-                questions[currentIndex].difficulty === "Hard"
-                  ? "#fee2e2"
-                  : "#e0f2fe",
-              color:
-                questions[currentIndex].difficulty === "Hard"
-                  ? "#dc2626"
-                  : "#0369a1",
-            }}
-          >
-            {questions[currentIndex].difficulty}
-          </span>
-
-          <pre
-            style={{
-              marginTop: 25,
-              whiteSpace: "pre-wrap",
-              lineHeight: 1.6,
-              color: "#334155",
-              fontSize: 14,
-            }}
-          >
-            {questions[currentIndex].description}
-          </pre>
-
-          {questions[currentIndex].image && (
-            <img
-              src={questions[currentIndex].image}
-              alt="visual"
-              style={{
-                marginTop: 25,
-                width: "100%",
-                borderRadius: 10,
-              }}
+          <div className="editor-wrapper">
+            <Editor
+              height="350px"
+              language={language}
+              theme="vs-dark"
+              value={code}
+              onChange={(value) => setCode(value)}
             />
-          )}
-        </div>
-
-        {/* RIGHT SIDE — CODE */}
-        <div
-          style={{
-            flex: 1.2,
-            display: "flex",
-            flexDirection: "column",
-            padding: "30px",
-            background: "#f1f5f9",
-            position: "relative",
-          }}
-        >
-          <PracticeConsole />
-
-          {showTick && (
-            <div
-              style={{
-                position: "absolute",
-                top: 20,
-                right: 20,
-                fontSize: 50,
-                color: "#22c55e",
-              }}
-            >
-              ✔
-            </div>
-          )}
-
-          <div style={{ marginTop: 20, display: "flex", gap: 15 }}>
-            <button
-              onClick={handleSubmit}
-              style={{
-                padding: "10px 20px",
-                background: "#6366f1",
-                color: "#fff",
-                borderRadius: 8,
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              Submit
-            </button>
-
-            <button
-              onClick={handleNext}
-              style={{
-                padding: "10px 20px",
-                background: "#94a3b8",
-                color: "#fff",
-                borderRadius: 8,
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              Next
-            </button>
           </div>
+
+          <div className="button-row">
+            <button className="btn primary">Run Code</button>
+            <button className="btn success" onClick={handleSave}>Submit</button>
+            <button className="btn neutral" onClick={handleSkip}>Skip</button>
+            <button className="btn secondary" onClick={handleNext}>Next</button>
+          </div>
+
+          {/* ===== TABS ===== */}
+          <div className="tabs">
+            <div
+              className={activeTab === "testcases" ? "tab active" : "tab"}
+              onClick={() => setActiveTab("testcases")}
+            >
+              Testcases
+            </div>
+            <div
+              className={activeTab === "custom" ? "tab active" : "tab"}
+              onClick={() => setActiveTab("custom")}
+            >
+              Custom Input
+            </div>
+            <div
+              className={activeTab === "ai" ? "tab active" : "tab"}
+              onClick={() => setActiveTab("ai")}
+            >
+              AI Suggestions
+            </div>
+          </div>
+
+          <div className="tab-content">
+            {activeTab === "testcases" && (
+  <table className="result-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Input</th>
+        <th>Expected Output</th>
+        <th>Your Output</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>TC1</td>
+        <td>[1,2]</td>
+        <td>[[],[1],[2],[1,2]]</td>
+        <td>-</td>
+        <td className="status pending">Pending</td>
+      </tr>
+    </tbody>
+  </table>
+)}
+
+            {activeTab === "custom" && (
+              <textarea
+                className="custom-input"
+                value={customInput}
+                onChange={(e) => setCustomInput(e.target.value)}
+                placeholder="Enter custom input here..."
+              />
+            )}
+
+            {activeTab === "ai" && (
+              <div className="ai-box">
+                AI suggestions will appear here.
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
     </div>

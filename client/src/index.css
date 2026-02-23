@@ -9,7 +9,7 @@ body,
 /* Use uploaded space image as the global page background. */
 body {
   margin: 0;
-  background: url("./image.png") center / cover no-repeat fixed;
+  background: #0e1117;
 }
 * { box-sizing: border-box; }
 html,body,#root { height: 100%; margin: 0; font-family: 'Georgia', 'Times New Roman', serif; color: #111827; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
