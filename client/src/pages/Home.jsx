@@ -6,7 +6,7 @@ export default function Home() {
   const navigate = useNavigate();
   const [slideDirection, setSlideDirection] = useState(null);
   const videoRef = useRef(null);
-  const starBgUrl = `${process.env.PUBLIC_URL || ""}/image.png`;
+  const starBgUrl = `${process.env.PUBLIC_URL || ""}/space-bg.png`;
 
   /* =====================================
      ROUTE TRANSITION

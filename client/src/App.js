@@ -2,7 +2,10 @@ import React from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Home from "./pages/Home";
 import MockInterview from "./pages/MockInterview";
+import CodingReport from "./pages/CodingReport";
 import Practice from "./pages/Practice";
+import QuestionDetail from "./pages/QuestionDetail";
+import QuestionList from "./pages/QuestionList";
 import Report from "./pages/Report";
 import TopicPractice from "./pages/TopicPractice";
 import Login from "./pages/Login";
@@ -40,6 +43,9 @@ function AppLayout() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/practice" element={<Practice />} />
+      <Route path="/practice/report" element={<CodingReport />} />
+      <Route path="/practice/:language/:topic/:questionId" element={<QuestionDetail />} />
+      <Route path="/practice/:language/:topic" element={<QuestionList />} />
       <Route path="/practice/:topic" element={<TopicPractice />} />
       <Route path="/mock-interview" element={<MockInterview />} />
       <Route path="/report" element={<Report />} />

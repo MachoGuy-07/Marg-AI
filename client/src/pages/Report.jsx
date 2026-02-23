@@ -741,9 +741,15 @@ export default function Report() {
 
   const adaptiveGuidance = useMemo(() => {
     const tips = [];
-    if (metrics.wordsPerMinute > 170) tips.push("You are speaking fast. Add a short pause after each key point.");
-    else if (metrics.wordsPerMinute > 0 && metrics.wordsPerMinute < 115) tips.push("You are speaking slow. Use shorter lines and stronger transitions.");
-    else tips.push("Your speaking pace is in a good range. Keep this rhythm.");
+    if (metrics.wordsPerMinute <= 0) {
+      tips.push("Pace signal is unavailable. Speak at least one complete answer to calibrate speed.");
+    } else if (metrics.wordsPerMinute > 170) {
+      tips.push("You are speaking fast. Add a short pause after each key point.");
+    } else if (metrics.wordsPerMinute < 115) {
+      tips.push("You are speaking slow. Use shorter lines and stronger transitions.");
+    } else {
+      tips.push("Your speaking pace is in a good range. Keep this rhythm.");
+    }
     if (metrics.eyeContact < 70) tips.push("Maintain lens contact while finishing each answer.");
     if (metrics.postureStability < 70) tips.push("Keep shoulders steady and avoid frequent leaning.");
     if (metrics.fillerRate > 0.05) tips.push("Replace fillers with a brief pause and continue with one clear point.");
@@ -752,10 +758,30 @@ export default function Report() {
   }, [answerRelevance, metrics]);
 
   const assistantGuidance = useMemo(() => {
-    const fromModel = metrics.aiFeedback.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
-    const lowMatch = questionReviews.filter((item) => item.relevanceScore < 70).slice(0, 3).map((item) => `Q${item.questionOrder + 1}: ${item.guidance}`);
-    return [...fromModel, ...lowMatch, ...adaptiveGuidance].slice(0, 8);
-  }, [adaptiveGuidance, metrics.aiFeedback, questionReviews]);
+    const byLabel = new Map();
+    [...skillStrengths, ...skillImprovements].forEach((item) => {
+      if (!byLabel.has(item.label)) {
+        byLabel.set(item.label, clamp(Math.round(item.value), 0, 100));
+      }
+    });
+
+    const metricAligned = [...byLabel.entries()].map(([label, value]) => {
+      if (value >= 75) {
+        return `${label} is ${value}%. Strong zone. Maintain this consistently across all answers.`;
+      }
+      if (value >= 55) {
+        return `${label} is ${value}%. Mid zone. Tighten this to move into a strong band.`;
+      }
+      return `${label} is ${value}%. Improvement needed. Focus here first for faster score lift.`;
+    });
+
+    const lowMatch = questionReviews
+      .filter((item) => item.relevanceScore < 70)
+      .slice(0, 2)
+      .map((item) => `Q${item.questionOrder + 1}: ${item.guidance}`);
+
+    return [...metricAligned, ...lowMatch, ...adaptiveGuidance].slice(0, 8);
+  }, [adaptiveGuidance, questionReviews, skillImprovements, skillStrengths]);
 
   const handleSaveTest = async () => {
     const user = safeParse(localStorage.getItem("user") || "null");

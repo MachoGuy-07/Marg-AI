@@ -1,6 +1,6 @@
 /* Global app shell with space background */
 .home-root {
-  background: url("../../public/image.png") center / cover no-repeat fixed;
+  background: url("../../public/space-bg.png") center / cover no-repeat fixed;
 }
 .site-shell {
   position: relative;
@@ -42,7 +42,7 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: var(--site-bg-image, url("../../public/image.png"));
+  background: var(--site-bg-image, url("../../public/space-bg.png"));
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;

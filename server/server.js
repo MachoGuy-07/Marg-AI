@@ -3,6 +3,7 @@
 // -----------------------------
 import authRoutes from "./routes/auth.js";
 import cors from "cors";
+import codeRoutes from "./routes/code.js";
 import testResultRoutes from "./routes/testResultRoutes.js";
 import express from "express";
 import multer from "multer";
@@ -125,6 +126,7 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/test-results", testResultRoutes);
+app.use("/api/code", codeRoutes);
 app.get("/api/health", (req, res) => {
   const stateMap = {
     0: "disconnected",

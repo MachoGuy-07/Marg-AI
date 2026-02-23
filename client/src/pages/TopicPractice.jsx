@@ -1,231 +1,486 @@
-import React, { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
-import { questions } from "../data/questions";
 import "../styles/topicPractice.css";
+
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
+
+const languageOptions = [
+  { value: "python", label: "Python" },
+  { value: "java", label: "Java" },
+  { value: "cpp", label: "C++" },
+  { value: "c", label: "C" }
+];
+
+function normalizeLanguage(value) {
+  const lowered = String(value || "").trim().toLowerCase();
+  if (lowered === "c++") return "cpp";
+  if (languageOptions.some((item) => item.value === lowered)) return lowered;
+  return "python";
+}
+
+function formatTime(totalSeconds) {
+  const safe = Math.max(0, Number(totalSeconds) || 0);
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+}
 
 export default function TopicPractice() {
   const { topic } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  const filteredQuestions = questions.filter(
-    (q) => q.slug === topic || q.difficulty === topic
-  );
-
+  const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [language, setLanguage] = useState("python");
-  const [activeTab, setActiveTab] = useState("testcases");
-  const [code, setCode] = useState("");
-  const [customInput, setCustomInput] = useState("");
-  const [time, setTime] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+
+  const [language, setLanguage] = useState(
+    normalizeLanguage(location.state?.language || localStorage.getItem("practice-language"))
+  );
   const [showLang, setShowLang] = useState(false);
 
-  const question = filteredQuestions[currentIndex];
+  const [code, setCode] = useState("");
+  const [customInput, setCustomInput] = useState("");
+  const [activeTab, setActiveTab] = useState("testcases");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  /* Load question */
+  const [runResults, setRunResults] = useState([]);
+  const [customRun, setCustomRun] = useState(null);
+  const [runError, setRunError] = useState("");
+  const [aiFeedback, setAiFeedback] = useState(null);
+
+  const [isRunning, setIsRunning] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const question = questions[currentIndex] || null;
+
+  const selectedLanguageLabel = useMemo(
+    () => languageOptions.find((item) => item.value === language)?.label || "Python",
+    [language]
+  );
+
   useEffect(() => {
-    if (question) {
-      setCode(question.starterCode);
-      setTime(0);
+    localStorage.setItem("practice-language", language);
+  }, [language]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchQuestions() {
+      setLoading(true);
+      setLoadError("");
+
+      try {
+        const slug = String(topic || "").toLowerCase();
+        const difficultyValues = new Set(["easy", "medium", "hard"]);
+        const params = new URLSearchParams({ language });
+
+        if (difficultyValues.has(slug)) {
+          params.set("difficulty", slug);
+          params.set("starterMode", "difficulty");
+        } else {
+          params.set("topic", slug);
+          params.set("starterMode", "topic");
+        }
+
+        const response = await fetch(`${API_BASE_URL}/api/code/questions?${params.toString()}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to load questions");
+        }
+
+        if (!cancelled) {
+          const incoming = Array.isArray(data?.questions) ? data.questions : [];
+          setQuestions(incoming);
+          setCurrentIndex(0);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setQuestions([]);
+          setLoadError(error?.message || "Unable to load coding questions");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
     }
-  }, [question]);
 
-  /* Timer */
+    fetchQuestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [topic, language]);
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTime((prev) => prev + 1);
+    if (!question) return;
+    setCode(question.starterCode || "");
+    setCustomInput("");
+    setActiveTab("testcases");
+    setElapsedSeconds(0);
+    setRunResults([]);
+    setCustomRun(null);
+    setRunError("");
+    setAiFeedback(null);
+  }, [question, language]);
+
+  useEffect(() => {
+    if (!question) return undefined;
+    const timer = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
     }, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
-  if (!question) {
-    return (
-      <div style={{ color: "white", padding: "40px" }}>
-        No question found
-      </div>
-    );
-  }
-
-  const formatTime = () => {
-    const mins = Math.floor(time / 60);
-    const secs = time % 60;
-    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
-  };
+    return () => clearInterval(timer);
+  }, [question, language]);
 
   const handleNext = () => {
-    if (currentIndex < filteredQuestions.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    }
+    if (!questions.length) return;
+    setCurrentIndex((prev) => (prev + 1) % questions.length);
   };
 
   const handleSkip = () => {
     handleNext();
   };
 
-  const handleSave = () => {
-    localStorage.setItem(`code-${question.id}`, code);
-    alert("Code saved!");
+  const handleRun = async () => {
+    if (!question) return;
+    setIsRunning(true);
+    setRunError("");
+    setAiFeedback(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/code/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          questionId: question.id,
+          language,
+          code,
+          customInput
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Execution failed");
+      }
+
+      setRunResults(Array.isArray(data?.results) ? data.results : []);
+      setCustomRun(data?.customRun || null);
+      setAiFeedback(data?.aiFeedback || null);
+
+      if (!data?.success) {
+        setRunError(data?.errorMessage || "Some testcases failed.");
+        setActiveTab("ai");
+      } else {
+        setRunError("");
+      }
+    } catch (error) {
+      setRunError(error?.message || "Execution failed");
+      setActiveTab("ai");
+    } finally {
+      setIsRunning(false);
+    }
   };
 
-const languageLabel = (lang) => {
-  switch (lang) {
-    case "python":
-      return "Python";
-    case "javascript":
-      return "JavaScript";
-    case "cpp":
-      return "C++";
-    case "java":
-      return "Java";
-    default:
-      return lang;
+  const handleSubmit = async () => {
+    if (!question) return;
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/code/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          questionId: question.id,
+          language,
+          code,
+          timeTakenSeconds: elapsedSeconds
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Submission failed");
+      }
+
+      const reportPayload = {
+        ...data.report,
+        success: Boolean(data?.success),
+        errorType: data?.errorType || "",
+        errorMessage: data?.errorMessage || "",
+        aiFeedback: data?.aiFeedback || null,
+        attemptedCode: code,
+        createdAt: new Date().toISOString()
+      };
+
+      localStorage.setItem("coding_report_payload", JSON.stringify(reportPayload));
+
+      navigate("/practice/report", {
+        state: {
+          report: reportPayload
+        }
+      });
+    } catch (error) {
+      setRunError(error?.message || "Submission failed");
+      setActiveTab("ai");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="question-page">
+        <div className="topic-status-card">Loading coding challenges...</div>
+      </div>
+    );
   }
-};
+
+  if (loadError) {
+    return (
+      <div className="question-page">
+        <div className="topic-status-card error">{loadError}</div>
+      </div>
+    );
+  }
+
+  if (!question) {
+    return (
+      <div className="question-page">
+        <div className="topic-status-card">No questions found for this track yet.</div>
+      </div>
+    );
+  }
+
+  const testRows = runResults.length ? runResults : (question.testCases || []).map((item) => ({
+    id: item.id,
+    input: item.input,
+    expectedOutput: item.expectedOutput,
+    output: "-",
+    passed: null
+  }));
+
   return (
     <div className="question-page">
-
-      {/* ===== TOP BAR (FULL WIDTH CENTERED) ===== */}
       <div className="question-topbar">
-        <div className="topbar-center">
+        <div className="nav-section">
+          {questions.map((item, index) => (
+            <button
+              type="button"
+              key={item.id}
+              className={index === currentIndex ? "nav-pill active" : "nav-pill"}
+              onClick={() => setCurrentIndex(index)}
+            >
+              {index + 1}
+            </button>
+          ))}
+        </div>
 
-          <div className="nav-section">
-            {filteredQuestions.map((_, index) => (
-              <div
-                key={index}
-                className={`nav-pill ${index === currentIndex ? "active" : ""}`}
-                onClick={() => setCurrentIndex(index)}
-              >
-                {index + 1}
-              </div>
-            ))}
-          </div>
-
-          <div className="timer-pill">
-            ⏱ {formatTime()}
-          </div>
-
+        <div className="topbar-right">
+          <div className="timer-pill">Time {formatTime(elapsedSeconds)}</div>
+          <div className="difficulty-pill">{question.difficulty}</div>
         </div>
       </div>
 
-      {/* ===== MAIN CONTENT ROW ===== */}
       <div className="question-main">
-
-        {/* LEFT PANEL */}
-        <div className="question-left">
+        <aside className="question-left">
+          <span className="topic-chip">{question.topic}</span>
           <h2>{question.title}</h2>
           <p>{question.description}</p>
-        </div>
 
-        {/* RIGHT PANEL */}
-        <div className="question-right">
+          <div className="spec-grid">
+            <div>
+              <h4>Input</h4>
+              <p>{question.inputFormat}</p>
+            </div>
+            <div>
+              <h4>Output</h4>
+              <p>{question.outputFormat}</p>
+            </div>
+          </div>
 
+          <div className="constraint-list">
+            <h4>Constraints</h4>
+            <ul>
+              {(question.constraints || []).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+
+        <section className="question-right">
           <div className="editor-top">
             <div className="custom-dropdown">
-  <div
-    className="dropdown-selected"
-    onClick={() => setShowLang((prev) => !prev)}
-  >
-    {languageLabel(language)} ▾
-  </div>
-
-  {showLang && (
-    <div className="dropdown-menu">
-      {["python", "javascript", "cpp", "java"].map((lang) => (
-        <div
-          key={lang}
-          className="dropdown-item"
-          onClick={() => {
-            setLanguage(lang);
-            setShowLang(false);
-          }}
-        >
-          {languageLabel(lang)}
-        </div>
-      ))}
-    </div>
-  )}
-</div>
+              <button
+                type="button"
+                className="dropdown-selected"
+                onClick={() => setShowLang((prev) => !prev)}
+              >
+                {selectedLanguageLabel} <span>v</span>
+              </button>
+              {showLang && (
+                <div className="dropdown-menu">
+                  {languageOptions.map((item) => (
+                    <button
+                      type="button"
+                      key={item.value}
+                      className={`dropdown-item ${item.value === language ? "active" : ""}`}
+                      onClick={() => {
+                        setLanguage(item.value);
+                        setShowLang(false);
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="editor-wrapper">
             <Editor
-              height="350px"
-              language={language}
+              height="390px"
+              language={language === "cpp" ? "cpp" : language}
               theme="vs-dark"
               value={code}
-              onChange={(value) => setCode(value)}
+              onChange={(value) => setCode(value || "")}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 14,
+                scrollBeyondLastLine: false
+              }}
             />
           </div>
 
           <div className="button-row">
-            <button className="btn primary">Run Code</button>
-            <button className="btn success" onClick={handleSave}>Submit</button>
-            <button className="btn neutral" onClick={handleSkip}>Skip</button>
-            <button className="btn secondary" onClick={handleNext}>Next</button>
+            <button type="button" className="btn primary" onClick={handleRun} disabled={isRunning}>
+              {isRunning ? "Running..." : "Run Code"}
+            </button>
+            <button type="button" className="btn success" onClick={handleSubmit} disabled={isSubmitting}>
+              {isSubmitting ? "Submitting..." : "Submit"}
+            </button>
+            <button type="button" className="btn neutral" onClick={handleSkip}>
+              Skip
+            </button>
+            <button type="button" className="btn secondary" onClick={handleNext}>
+              Next
+            </button>
           </div>
 
-          {/* ===== TABS ===== */}
           <div className="tabs">
-            <div
+            <button
+              type="button"
               className={activeTab === "testcases" ? "tab active" : "tab"}
               onClick={() => setActiveTab("testcases")}
             >
               Testcases
-            </div>
-            <div
+            </button>
+            <button
+              type="button"
               className={activeTab === "custom" ? "tab active" : "tab"}
               onClick={() => setActiveTab("custom")}
             >
               Custom Input
-            </div>
-            <div
+            </button>
+            <button
+              type="button"
               className={activeTab === "ai" ? "tab active" : "tab"}
               onClick={() => setActiveTab("ai")}
             >
-              AI Suggestions
-            </div>
+              AI Feedback
+            </button>
           </div>
 
           <div className="tab-content">
             {activeTab === "testcases" && (
-  <table className="result-table">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Input</th>
-        <th>Expected Output</th>
-        <th>Your Output</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>TC1</td>
-        <td>[1,2]</td>
-        <td>[[],[1],[2],[1,2]]</td>
-        <td>-</td>
-        <td className="status pending">Pending</td>
-      </tr>
-    </tbody>
-  </table>
-)}
+              <table className="result-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Input</th>
+                    <th>Expected Output</th>
+                    <th>Your Output</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {testRows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.id}</td>
+                      <td>{row.input}</td>
+                      <td>{row.expectedOutput}</td>
+                      <td>{row.output || "-"}</td>
+                      <td className={row.passed === null ? "status pending" : row.passed ? "status pass" : "status fail"}>
+                        {row.passed === null ? "Pending" : row.passed ? "Pass" : "Fail"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
 
             {activeTab === "custom" && (
-              <textarea
-                className="custom-input"
-                value={customInput}
-                onChange={(e) => setCustomInput(e.target.value)}
-                placeholder="Enter custom input here..."
-              />
+              <div className="custom-panel">
+                <textarea
+                  className="custom-input"
+                  value={customInput}
+                  onChange={(event) => setCustomInput(event.target.value)}
+                  placeholder="Provide custom stdin input here..."
+                />
+                {customRun && (
+                  <div className={customRun.success ? "custom-output success" : "custom-output error"}>
+                    <h4>{customRun.success ? "Custom Output" : "Custom Run Error"}</h4>
+                    <pre>{customRun.success ? customRun.output || "(empty output)" : customRun.error}</pre>
+                  </div>
+                )}
+              </div>
             )}
 
             {activeTab === "ai" && (
               <div className="ai-box">
-                AI suggestions will appear here.
+                {runError && <p className="run-error">{runError}</p>}
+
+                {aiFeedback ? (
+                  <>
+                    <h4>{aiFeedback.summary}</h4>
+                    <p>{aiFeedback.probableCause}</p>
+
+                    <div className="ai-columns">
+                      <div>
+                        <h5>Fix Steps</h5>
+                        <ul>
+                          {(aiFeedback.fixSteps || []).map((step) => (
+                            <li key={step}>{step}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div>
+                        <h5>Error Highlights</h5>
+                        <ul>
+                          {(aiFeedback.highlightedErrors || []).map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p>AI guidance appears here when your code throws an error or fails testcases.</p>
+                )}
               </div>
             )}
           </div>
-
-        </div>
+        </section>
       </div>
     </div>
   );

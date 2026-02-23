@@ -7,7 +7,8 @@
     radial-gradient(160% 100% at 18% 0%, rgba(62, 107, 246, 0.2), transparent 52%),
     radial-gradient(120% 100% at 92% 2%, rgba(184, 80, 255, 0.18), transparent 50%),
     radial-gradient(180% 120% at 50% 100%, rgba(51, 84, 210, 0.18), transparent 62%),
-    linear-gradient(135deg, rgba(4, 8, 26, 0.94), rgba(9, 15, 40, 0.96));
+    linear-gradient(135deg, rgba(4, 8, 26, 0.7), rgba(9, 15, 40, 0.72)),
+    url("../../public/space-bg.png") center / cover no-repeat fixed;
 }
 
 .rp-main {
@@ -594,7 +595,9 @@
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background: #090f2a;
+  background:
+    linear-gradient(135deg, rgba(4, 8, 26, 0.72), rgba(9, 15, 40, 0.74)),
+    url("../../public/space-bg.png") center / cover no-repeat fixed;
   color: #c8d4ff;
 }
 

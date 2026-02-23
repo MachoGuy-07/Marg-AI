@@ -141,74 +141,108 @@ function buildAIFeedback({
   eyeContact,
   posture,
   tone,
+  transcriptWordCount,
 }) {
+  const safeWpm = Math.max(0, Math.round(Number(wpm) || 0));
+  const safeFillerCount = Math.max(0, Math.round(Number(fillerCount) || 0));
+  const safeFillerRate = Math.max(0, Number(fillerRate) || 0);
+  const safePauseCount = Math.max(0, Math.round(Number(pauseCount) || 0));
+  const safeClarity = clamp(Math.round(Number(clarity) || 0), 0, 100);
+  const safeVocabulary = clamp(Math.round(Number(vocabularyDiversity) || 0), 0, 100);
+  const safeEyeContact = clamp(Math.round(Number(eyeContact) || 0), 0, 100);
+  const safePosture = clamp(Math.round(Number(posture) || 0), 0, 100);
+  const safeTranscriptWords = Math.max(0, Math.round(Number(transcriptWordCount) || 0));
+  const hasSpeechSignal = safeTranscriptWords >= 8 || safeWpm > 0;
+
   const tips = [];
 
-  if (eyeContact < 65) {
+  if (!hasSpeechSignal && safeEyeContact === 0) {
+    tips.push("Eye contact signal is unavailable (0%). Keep your face centered and camera on during the answer.");
+  } else if (safeEyeContact < 35) {
+    tips.push(`Eye contact is ${safeEyeContact}%. Too low for interview confidence. Keep your gaze on the lens while finishing each point.`);
+  } else if (safeEyeContact < 65) {
     tips.push(
-      `Eye contact is ${eyeContact}%. Good start. Keep your eyes on the lens while finishing each point.`
+      `Eye contact is ${safeEyeContact}%. Decent baseline. Maintain lens focus to improve perceived confidence.`
     );
   } else {
     tips.push(
-      `Eye contact is ${eyeContact}%. Strong presence. Keep this level while answering harder questions.`
+      `Eye contact is ${safeEyeContact}%. Strong presence. Keep this level while answering harder questions.`
     );
   }
 
-  if (posture < 65) {
+  if (!hasSpeechSignal && safePosture === 0) {
+    tips.push("Posture signal is unavailable (0%). Sit upright and stay fully in frame for accurate tracking.");
+  } else if (safePosture < 35) {
+    tips.push(`Posture stability is ${safePosture}%. Too much movement detected. Keep shoulders stable and reduce leaning.`);
+  } else if (safePosture < 65) {
     tips.push(
-      `Posture stability is ${posture}%. You're improving. Keep shoulders still and avoid frequent leaning.`
+      `Posture stability is ${safePosture}%. Improving. Keep shoulders still and avoid frequent leaning.`
     );
   } else {
     tips.push(
-      `Posture stability is ${posture}%. Your body language already supports confidence.`
+      `Posture stability is ${safePosture}%. Your body language already supports confidence.`
     );
   }
 
-  if (paceLabel === "Fast") {
-    tips.push(`You are speaking fast at ${wpm} WPM. Add a short pause after each key achievement.`);
+  if (!hasSpeechSignal || safeWpm === 0) {
+    tips.push("Pace signal is unavailable (0 WPM). Speak a full answer so speed can be measured.");
+  } else if (paceLabel === "Fast") {
+    tips.push(`You are speaking fast at ${safeWpm} WPM. Add a short pause after each key achievement.`);
   } else if (paceLabel === "Slow") {
-    tips.push(`Pace is ${wpm} WPM. Shorter, direct sentences will make your answer sound more decisive.`);
+    tips.push(`Pace is ${safeWpm} WPM (slow). Use shorter, direct sentences to sound more decisive.`);
   } else {
-    tips.push(`Pace is controlled at ${wpm || 0} WPM. Great flow, maintain this in follow-up answers.`);
+    tips.push(`Pace is controlled at ${safeWpm} WPM. Great flow, maintain this in follow-up answers.`);
   }
 
-  if (fillerRate > 0.05) {
+  if (!hasSpeechSignal || safeTranscriptWords < 10) {
+    tips.push("Filler-word signal is low-confidence due short speech sample. Give a longer response for accurate detection.");
+  } else if (safeFillerRate > 0.05) {
     tips.push(
-      `Filler usage is ${fillerCount}. Replace fillers with short silence and tighter transitions.`
+      `Filler usage is ${safeFillerCount}. Replace fillers with short silence and tighter transitions.`
     );
-  } else if (fillerCount > 0) {
-    tips.push(`Minor filler usage (${fillerCount}). Easy win: clean this up for sharper delivery.`);
+  } else if (safeFillerCount > 0) {
+    tips.push(`Minor filler usage (${safeFillerCount}). Easy win: clean this up for sharper delivery.`);
   } else {
     tips.push("No filler words detected. Crisp and confident delivery.");
   }
 
-  if (pauseCount > 8) {
+  if (!hasSpeechSignal) {
+    tips.push("Pause control is not measurable yet. Speak one complete, structured answer for a reliable signal.");
+  } else if (safePauseCount > 10) {
     tips.push(
-      `Pause frequency is ${pauseCount}. Try ending each sentence with one clear conclusion.`
+      `Pause frequency is ${safePauseCount}. Too many breaks. End each sentence with one clear conclusion.`
     );
+  } else if (safePauseCount > 6) {
+    tips.push(`Pause frequency is ${safePauseCount}. Keep pauses shorter and more intentional.`);
   } else {
-    tips.push(`Pause control is good (${pauseCount}). Keep pauses intentional.`);
+    tips.push(`Pause control is good (${safePauseCount}). Keep pauses intentional.`);
   }
 
-  if (vocabularyDiversity < 34) {
+  if (!hasSpeechSignal || safeTranscriptWords < 12) {
+    tips.push("Vocabulary score is low-confidence on short responses. Use a longer answer with concrete actions and outcomes.");
+  } else if (safeVocabulary < 34) {
     tips.push(
-      `Vocabulary diversity is ${vocabularyDiversity}%. Add strong action verbs and quantifiable outcomes.`
+      `Vocabulary diversity is ${safeVocabulary}%. Add strong action verbs and quantifiable outcomes.`
     );
   } else {
     tips.push(
-      `Vocabulary diversity is ${vocabularyDiversity}%. Good lexical range for interview answers.`
+      `Vocabulary diversity is ${safeVocabulary}%. Good lexical range for interview answers.`
     );
   }
 
-  if (clarity < 70) {
+  if (!hasSpeechSignal || safeClarity === 0) {
+    tips.push("Clarity score is unavailable due limited speech signal. Answer at least 2-3 full sentences.");
+  } else if (safeClarity < 70) {
     tips.push(
-      `Clarity is ${clarity}%. You're close. Reduce speed swings and simplify sentence structure.`
+      `Clarity is ${safeClarity}%. Reduce speed swings and simplify sentence structure.`
     );
   } else {
-    tips.push(`Clarity is ${clarity}%. Excellent structure, keep this under pressure.`);
+    tips.push(`Clarity is ${safeClarity}%. Excellent structure, keep this under pressure.`);
   }
 
-  if (tone === "Flat") {
+  if (!hasSpeechSignal) {
+    tips.push("Tone analysis is pending. Provide a longer spoken answer to capture vocal variation.");
+  } else if (tone === "Flat") {
     tips.push("Tone sounds flat at times. Add emphasis on impact words and outcomes.");
   } else if (tone === "Energetic") {
     tips.push("Tone is energetic. Great energy, just control intensity on long answers.");
@@ -698,22 +732,6 @@ export default function MockInterview() {
     handleRecordingStop();
     finalizeCurrentQuestionReview();
 
-    const confidenceScore = clamp(Math.round((confidenceIndex + 12) / 10), 3, 10);
-    const clarityScore = clamp(Math.round((speakingClarity + 10) / 10), 3, 10);
-
-    const aiFeedback = buildAIFeedback({
-      wpm,
-      paceLabel: pace.label,
-      fillerCount,
-      fillerRate,
-      pauseCount,
-      clarity: speakingClarity,
-      vocabularyDiversity,
-      eyeContact: eyeContactPct,
-      posture: posturePct,
-      tone,
-    });
-
     const transcriptFromRef = String(transcriptRef.current || "").trim();
     const transcriptFromUi = String(transcript || "").trim();
     const finalTranscript =
@@ -721,18 +739,77 @@ export default function MockInterview() {
         ? transcriptFromUi
         : transcriptFromRef || transcriptFromUi;
 
+    const transcriptWords = tokenize(finalTranscript);
+    const transcriptWordCount = transcriptWords.length;
+    const elapsedMinutes = startTimeRef.current
+      ? Math.max((Date.now() - startTimeRef.current) / 60000, 0.08)
+      : 1;
+    const computedWpm = wpm > 0
+      ? wpm
+      : (transcriptWordCount ? Math.round(transcriptWordCount / elapsedMinutes) : 0);
+    const computedFillerCount = fillerCount > 0
+      ? fillerCount
+      : transcriptWords.filter((word) => FILLER_WORDS.includes(word)).length;
+    const computedFillerRate = transcriptWordCount
+      ? computedFillerCount / transcriptWordCount
+      : 0;
+    const computedVocabularyDiversity = vocabularyDiversity > 0
+      ? vocabularyDiversity
+      : (transcriptWordCount ? Math.round((new Set(transcriptWords).size / transcriptWordCount) * 100) : 0);
+    const computedPace = paceBand(computedWpm);
+    const sentenceCount = Math.max(1, (finalTranscript.match(/[.!?]+/g) || []).length);
+    const computedPauseCount = pauseCount > 0 ? pauseCount : Math.max(0, sentenceCount - 1);
+    const computedClarity =
+      speakingClarity > 0
+        ? speakingClarity
+        : clamp(
+            Math.round(
+              liveVoiceScore * 40 +
+              (computedPace.percent / 100) * 20 +
+              (1 - clamp(computedFillerRate * 6, 0, 1)) * 16 +
+              (computedVocabularyDiversity / 100) * 14 +
+              liveConfidence * 10
+            ),
+            0,
+            100
+          );
+    const computedPauseRatio = Number(
+      clamp(
+        pauseRatio > 0 ? pauseRatio : (transcriptWordCount ? computedPauseCount / Math.max(1, transcriptWordCount / 8) : 1),
+        0,
+        1
+      ).toFixed(3)
+    );
+
+    const confidenceScore = clamp(Math.round((confidenceIndex + 12) / 10), 3, 10);
+    const clarityScore = clamp(Math.round((computedClarity + 10) / 10), 3, 10);
+
+    const aiFeedback = buildAIFeedback({
+      wpm: computedWpm,
+      paceLabel: computedPace.label,
+      fillerCount: computedFillerCount,
+      fillerRate: computedFillerRate,
+      pauseCount: computedPauseCount,
+      clarity: computedClarity,
+      vocabularyDiversity: computedVocabularyDiversity,
+      eyeContact: eyeContactPct,
+      posture: posturePct,
+      tone,
+      transcriptWordCount,
+    });
+
     const mergedAnalysis = {
       ...(data?.analysis || {}),
       attempt_id: Date.now(),
       confidence_score: confidenceScore,
-      pace_score: pace.score,
+      pace_score: computedPace.score,
       clarity_score: clarityScore,
-      words_per_minute: wpm,
-      filler_count: fillerCount,
-      pause_count: pauseCount,
-      pause_ratio: Number(pauseRatio.toFixed(3)),
-      vocabulary_diversity: vocabularyDiversity,
-      speaking_clarity: speakingClarity,
+      words_per_minute: computedWpm,
+      filler_count: computedFillerCount,
+      pause_count: computedPauseCount,
+      pause_ratio: computedPauseRatio,
+      vocabulary_diversity: computedVocabularyDiversity,
+      speaking_clarity: computedClarity,
       voice_stability: Math.round(voiceStability * 100),
       eye_contact: eyeContactPct,
       posture_stability: posturePct,
