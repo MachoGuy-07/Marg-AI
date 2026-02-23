@@ -1,16 +1,30 @@
-// client/src/components/VideoRecorder.jsx
-
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import PostureAnalyzer from "./PostureAnalyzer";
 import VoiceAnalyzer from "./VoiceAnalyzer";
 
-export default function VideoRecorder({
+const VideoRecorder = forwardRef(function VideoRecorder({
   onUploadComplete,
   onPostureScore,
   onVoiceScore,
   onRecordingStart,
-  onRecordingStop
-}) {
+  onRecordingStop,
+  onEmotionChange,
+  onRecordingStateChange,
+  onPostureMetrics,
+  onVoiceMetrics,
+  title = "Interview Camera",
+  showPlayback = false,
+  showHeader = true,
+  showEmotion = true,
+  showControls = true,
+}, ref) {
   const videoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -18,15 +32,12 @@ export default function VideoRecorder({
   const [stream, setStream] = useState(null);
   const [recording, setRecording] = useState(false);
   const [videoURL, setVideoURL] = useState(null);
-  const [emotion, setEmotion] = useState("Neutral"); // ⭐ Emotion state
+  const [emotion, setEmotion] = useState("Neutral");
 
-  // ----------------------------
-  // INIT CAMERA + MIC
-  // ----------------------------
   useEffect(() => {
     let mediaStream = null;
 
-    async function initCamera() {
+    async function initMedia() {
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -43,7 +54,7 @@ export default function VideoRecorder({
       }
     }
 
-    initCamera();
+    initMedia();
 
     return () => {
       if (mediaStream) {
@@ -52,17 +63,16 @@ export default function VideoRecorder({
     };
   }, []);
 
-  // ----------------------------
-  // START RECORDING
-  // ----------------------------
-  const startRecording = () => {
+  const startRecording = useCallback(() => {
     if (!stream) return;
 
     chunksRef.current = [];
     setVideoURL(null);
-    setEmotion("Neutral"); // ⭐ Reset emotion each recording
+    setEmotion("Neutral");
+    onEmotionChange?.("Neutral");
 
     onRecordingStart?.();
+    onRecordingStateChange?.(true);
 
     const recorder = new MediaRecorder(stream, {
       mimeType: "video/webm",
@@ -70,17 +80,14 @@ export default function VideoRecorder({
 
     mediaRecorderRef.current = recorder;
 
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        chunksRef.current.push(e.data);
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunksRef.current.push(event.data);
       }
     };
 
     recorder.onstop = async () => {
-      const blob = new Blob(chunksRef.current, {
-        type: "video/webm",
-      });
-
+      const blob = new Blob(chunksRef.current, { type: "video/webm" });
       const url = URL.createObjectURL(blob);
       setVideoURL(url);
 
@@ -88,64 +95,85 @@ export default function VideoRecorder({
       formData.append("recording", blob, "interview.webm");
 
       try {
-        const res = await fetch(
-          "http://localhost:5000/api/analyze-interview",
-          {
-            method: "POST",
-            body: formData,
-          }
-        );
+        const response = await fetch("http://localhost:5000/api/analyze-interview", {
+          method: "POST",
+          body: formData,
+        });
 
-        const data = await res.json();
+        const data = await response.json();
 
-        if (!res.ok) {
-          alert(data.error || "Upload failed");
+        if (!response.ok) {
+          alert(data.error || "Upload failed. Showing live-analysis report instead.");
+          onUploadComplete?.({ analysis: {} });
           return;
         }
 
         onUploadComplete?.(data);
-
       } catch (err) {
         console.error("Upload error:", err);
-        alert("Recording failed to upload");
+        alert("Recording upload failed. Showing live-analysis report instead.");
+        onUploadComplete?.({ analysis: {} });
       }
     };
 
     recorder.start();
     setRecording(true);
-  };
+  }, [
+    onEmotionChange,
+    onRecordingStart,
+    onRecordingStateChange,
+    onUploadComplete,
+    stream,
+  ]);
 
-  // ----------------------------
-  // STOP RECORDING
-  // ----------------------------
-  const stopRecording = () => {
+  const stopRecording = useCallback(() => {
+    if (!recording) return;
     mediaRecorderRef.current?.stop();
     setRecording(false);
     onRecordingStop?.();
-  };
+    onRecordingStateChange?.(false);
+  }, [onRecordingStateChange, onRecordingStop, recording]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      startRecording,
+      stopRecording,
+      isRecording: () => recording,
+      hasStream: () => Boolean(stream),
+    }),
+    [recording, startRecording, stopRecording, stream]
+  );
 
   return (
     <div className="video-recorder">
-      <h3>🎥 Interview Camera</h3>
+      {showHeader && <h3 className="mi-camera-title">{title}</h3>}
 
-      <video
-        ref={videoRef}
-        autoPlay
-        muted
-        playsInline
-        style={{ width: "100%", borderRadius: "12px" }}
-      />
+      <div className="mi-camera-frame">
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className="mi-camera-video"
+        />
+      </div>
 
-      {/* ⭐ Emotion Display */}
-      <p style={{ marginTop: 8 }}>Emotion detected: {emotion}</p>
+      {showEmotion && (
+        <p className="mi-emotion">
+          Emotion detected: <span>{emotion}</span>
+        </p>
+      )}
 
-      {/* 👇 Only run analyzers while recording */}
       {recording && (
         <PostureAnalyzer
           videoRef={videoRef}
-          onScoreUpdate={(score, emotionValue) => {
+          onMetrics={onPostureMetrics}
+          onScoreUpdate={(score, emotionValue, metrics) => {
             onPostureScore?.(score);
+            onPostureMetrics?.(metrics || {});
             setEmotion(emotionValue);
+            onEmotionChange?.(emotionValue);
           }}
         />
       )}
@@ -154,31 +182,29 @@ export default function VideoRecorder({
         <VoiceAnalyzer
           stream={stream}
           onVoiceScore={onVoiceScore}
+          onMetrics={onVoiceMetrics}
         />
       )}
 
-      <div style={{ marginTop: "12px" }}>
-        {!recording ? (
-          <button className="btn primary" onClick={startRecording}>
-            🔴 Start Recording
+      {showControls &&
+        (!recording ? (
+          <button type="button" className="mi-record-btn start" onClick={startRecording}>
+            Start Recording
           </button>
         ) : (
-          <button className="btn ghost" onClick={stopRecording}>
-            ⏹ Stop Recording
+          <button type="button" className="mi-record-btn stop" onClick={stopRecording}>
+            Stop Recording
           </button>
-        )}
-      </div>
+        ))}
 
-      {videoURL && (
-        <div style={{ marginTop: "16px" }}>
-          <h4>▶️ Playback</h4>
-          <video
-            src={videoURL}
-            controls
-            style={{ width: "100%", borderRadius: "12px" }}
-          />
+      {showPlayback && videoURL && (
+        <div className="mi-camera-playback">
+          <h4>Playback</h4>
+          <video src={videoURL} controls className="mi-camera-video" />
         </div>
       )}
     </div>
   );
-}
+});
+
+export default VideoRecorder;

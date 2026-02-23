@@ -15,7 +15,7 @@ const testResultSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-    engagement: {
+    clarity: {
       type: Number,
       required: true,
     },
