@@ -12,30 +12,132 @@ import fs from "fs";
 import mongoose from "mongoose";
 import OpenAI from "openai";
 
-mongoose.connect("mongodb://127.0.0.1:27017/ai-interview")
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.error("❌ Mongo Error:", err));
+dotenv.config();
+mongoose.set("bufferCommands", false);
+
+const fallbackMongoUri = "mongodb://127.0.0.1:27017/ai-interview";
+
+function buildMongoUriFromParts() {
+  const directUri = String(process.env.MONGO_URI || "").trim();
+  if (directUri) return directUri;
+
+  const user = String(process.env.MONGO_USER || "").trim();
+  const password = String(process.env.MONGO_PASSWORD || "").trim();
+  const cluster = String(process.env.MONGO_CLUSTER || "").trim();
+  const dbName = String(process.env.MONGO_DB_NAME || "ai-interview").trim();
+
+  if (user && password && cluster) {
+    const encodedUser = encodeURIComponent(user);
+    const encodedPassword = encodeURIComponent(password);
+    const normalizedCluster = cluster.replace(/^mongodb\+srv:\/\//, "").replace(/^https?:\/\//, "");
+    return `mongodb+srv://${encodedUser}:${encodedPassword}@${normalizedCluster}/${dbName}?retryWrites=true&w=majority`;
+  }
+
+  return fallbackMongoUri;
+}
+
+function buildMongoCandidates() {
+  const candidates = [];
+  const primary = String(process.env.MONGO_URI || "").trim();
+  const direct = String(process.env.MONGO_URI_DIRECT || "").trim();
+  const fromParts = buildMongoUriFromParts();
+
+  if (primary) candidates.push(primary);
+  if (direct) candidates.push(direct);
+  if (!primary && fromParts) candidates.push(fromParts);
+
+  if (candidates.length === 0) {
+    candidates.push(fallbackMongoUri);
+  }
+
+  return [...new Set(candidates)];
+}
+
+function maskMongoUri(uri) {
+  return String(uri).replace(/\/\/([^:]+):([^@]+)@/, "//$1:***@");
+}
+
+async function connectMongo() {
+  const mongoCandidates = buildMongoCandidates();
+  let lastError = null;
+
+  for (const mongoUri of mongoCandidates) {
+    try {
+      await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 10000 });
+      console.log(`MongoDB connected: ${maskMongoUri(mongoUri)}`);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.error(`Mongo connection failed: ${maskMongoUri(mongoUri)}`);
+      if (String(error?.message || "").includes("querySrv")) {
+        console.error(
+          "SRV DNS lookup failed. Add a standard Atlas URI to MONGO_URI_DIRECT to bypass SRV DNS."
+        );
+      }
+    }
+  }
+
+  console.error(
+    "Check Mongo credentials, Atlas network access allowlist, and encode special characters in password."
+  );
+  throw lastError || new Error("Mongo connection failed");
+}
 
 /// -----------------------------
 // CONFIG
 // -----------------------------
-dotenv.config();
-
 const app = express();
+const configuredOrigins = String(process.env.CLIENT_ORIGIN || "http://localhost:3000")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 
-// ✅ Proper CORS (THIS FIXES EVERYTHING)
-app.use(cors({
-  origin: "http://localhost:3000", // your React port
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
-}));
+function isLocalDevOrigin(origin) {
+  if (!origin) return false;
+  return (
+    /^http:\/\/localhost:\d+$/.test(origin) ||
+    /^http:\/\/127\.0\.0\.1:\d+$/.test(origin)
+  );
+}
 
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (configuredOrigins.includes(origin) || isLocalDevOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(null, false);
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/test-results", testResultRoutes);
+app.get("/api/health", (req, res) => {
+  const stateMap = {
+    0: "disconnected",
+    1: "connected",
+    2: "connecting",
+    3: "disconnecting",
+  };
+
+  return res.json({
+    ok: true,
+    dbState: stateMap[mongoose.connection.readyState] || "unknown",
+  });
+});
 
 
 
@@ -47,6 +149,39 @@ app.use("/api/test-results", testResultRoutes);
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
+
+function safeDeleteFile(filePath) {
+  if (!filePath) return;
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch {
+    // Ignore cleanup failures.
+  }
+}
+
+function buildFallbackAnalysis(reason = "") {
+  const feedback = [
+    "Server-side transcript analysis is temporarily unavailable.",
+    "Live camera and voice metrics were used to complete your report.",
+  ];
+
+  if (reason) {
+    feedback.push(`Technical note: ${reason}`);
+  }
+
+  return {
+    transcript: "",
+    words_per_minute: 0,
+    filler_count: 0,
+    confidence_score: 7,
+    pace_score: 7,
+    clarity_score: 7,
+    final_score: 7,
+    ai_feedback: feedback,
+  };
+}
 
 // -----------------------------
 // MULTER SETUP
@@ -72,22 +207,12 @@ app.post(
       const audioPath = videoPath + ".wav";
 
       if (!openai) {
-        fs.unlinkSync(videoPath);
+        safeDeleteFile(videoPath);
         return res.json({
           success: true,
-          analysis: {
-            transcript: "",
-            words_per_minute: 0,
-            filler_count: 0,
-            confidence_score: 6,
-            pace_score: 6,
-            clarity_score: 6,
-            final_score: 6,
-            ai_feedback: [
-              "Server-side transcript analysis is disabled because OPENAI_API_KEY is not set.",
-              "Live client metrics are still available in real time during the interview."
-            ]
-          }
+          analysis: buildFallbackAnalysis(
+            "OPENAI_API_KEY is missing, so only live client metrics were used."
+          ),
         });
       }
 
@@ -224,8 +349,8 @@ const durationMinutes = durationSeconds / 60;
       // ----------------------------------
       // 8️⃣ Cleanup
       // ----------------------------------
-      fs.unlinkSync(videoPath);
-      fs.unlinkSync(audioPath);
+      safeDeleteFile(videoPath);
+      safeDeleteFile(audioPath);
 
       return res.json({
         success: true,
@@ -242,7 +367,15 @@ const durationMinutes = durationSeconds / 60;
 
     } catch (err) {
       console.error(err);
-      return res.status(500).json({ error: "Analysis failed" });
+      const videoPath = req.file?.path;
+      const audioPath = videoPath ? `${videoPath}.wav` : "";
+      safeDeleteFile(audioPath);
+      safeDeleteFile(videoPath);
+
+      return res.json({
+        success: true,
+        analysis: buildFallbackAnalysis("Media conversion or transcription failed."),
+      });
     }
   }
 );
@@ -252,6 +385,42 @@ const durationMinutes = durationSeconds / 60;
 // -----------------------------
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+function startHttpServer(port) {
+  const server = app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+
+  server.on("error", (error) => {
+    if (error?.code === "EADDRINUSE") {
+      console.error(
+        `Port ${port} is already in use. Stop the old server process or change PORT in server/.env.`
+      );
+      process.exit(1);
+      return;
+    }
+
+    console.error("HTTP server error:", error);
+    process.exit(1);
+  });
+}
+
+async function startServer() {
+  try {
+    if (!String(process.env.JWT_SECRET || "").trim()) {
+      console.error("Server startup aborted: JWT_SECRET is missing in server/.env");
+      process.exit(1);
+      return;
+    }
+    try {
+      await connectMongo();
+    } catch (error) {
+      console.error("Mongo unavailable. Server is starting with local auth fallback.");
+    }
+    startHttpServer(PORT);
+  } catch (error) {
+    console.error("Server startup failed.");
+    process.exit(1);
+  }
+}
+
+void startServer();

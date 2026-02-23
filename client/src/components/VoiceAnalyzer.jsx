@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react";
 export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
   const audioContextRef = useRef(null);
   const animationRef = useRef(null);
+  const lastProcessedAtRef = useRef(0);
+  const smoothedVoiceScoreRef = useRef(0);
 
   const lastEnergyRef = useRef(0);
   const instabilityRef = useRef(0);
@@ -24,14 +26,21 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
     pauseCountRef.current = 0;
     inPauseRef.current = false;
     frameCounterRef.current = 0;
+    lastProcessedAtRef.current = 0;
+    smoothedVoiceScoreRef.current = 0;
 
     const audioContext =
       new (window.AudioContext || window.webkitAudioContext)();
+    if (audioContext.state === "suspended") {
+      audioContext.resume().catch(() => {
+        // Ignore resume failures; analyzer may still start on user interaction.
+      });
+    }
     const source = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
 
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.82;
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.74;
     source.connect(analyser);
 
     const freqData = new Uint8Array(analyser.frequencyBinCount);
@@ -39,11 +48,18 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
 
     audioContextRef.current = audioContext;
 
-    const SILENCE_ENERGY = 16;
-    const SILENCE_RMS = 0.018;
-    const PAUSE_MIN_FRAMES = 10;
+    const SILENCE_ENERGY = 14;
+    const SILENCE_RMS = 0.014;
+    const PAUSE_MIN_FRAMES = 7;
+    const PROCESS_INTERVAL_MS = 40;
 
-    function analyze() {
+    function analyze(timestamp = performance.now()) {
+      if (timestamp - lastProcessedAtRef.current < PROCESS_INTERVAL_MS) {
+        animationRef.current = requestAnimationFrame(analyze);
+        return;
+      }
+      lastProcessedAtRef.current = timestamp;
+
       analyser.getByteFrequencyData(freqData);
       analyser.getByteTimeDomainData(timeData);
 
@@ -84,11 +100,13 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
       const pauseRatio =
         silenceFramesRef.current / Math.max(1, totalFramesRef.current);
       const stability = clamp01(
-        1 - instabilityRef.current / (totalFramesRef.current * 18 + 120)
+        1 - instabilityRef.current / (totalFramesRef.current * 12 + 90)
       );
-      const voiceScore = clamp01(stability * 0.65 + (1 - pauseRatio) * 0.35);
-
-      onVoiceScore?.(voiceScore);
+      const voiceScore = clamp01(stability * 0.62 + (1 - pauseRatio) * 0.38);
+      smoothedVoiceScoreRef.current = clamp01(
+        smoothedVoiceScoreRef.current +
+          (voiceScore - smoothedVoiceScoreRef.current) * 0.36
+      );
 
       let weighted = 0;
       let total = 0;
@@ -107,9 +125,10 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
       else if (centroidHz < 1200 && rms > SILENCE_RMS) tone = "Calm";
       if (pauseRatio > 0.62) tone = "Flat";
 
-      if (frameCounterRef.current % 6 === 0) {
+      if (frameCounterRef.current % 4 === 0) {
+        onVoiceScore?.(smoothedVoiceScoreRef.current);
         onMetrics?.({
-          voiceScore,
+          voiceScore: smoothedVoiceScoreRef.current,
           pauseCount: pauseCountRef.current,
           pauseRatio,
           stability,

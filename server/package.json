@@ -4,8 +4,11 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-  "start": "nodemon server.js"
-},
+    "start": "node server.js",
+    "dev": "node server.js",
+    "seed:users": "node scripts/seedSampleUsers.js",
+    "check:db": "node scripts/checkMongoConnection.js"
+  },
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",

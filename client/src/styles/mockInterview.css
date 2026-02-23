@@ -1,59 +1,81 @@
 .mi-page {
+  position: relative;
   min-height: 100vh;
-  padding: 34px 30px;
-  color: #eef2ff;
+  padding: 42px 30px 28px;
+  color: #f5f3ff;
+  background:
+    linear-gradient(168deg, rgba(3, 5, 24, 0.58), rgba(6, 8, 30, 0.54)),
+    url("../../public/mock-interview-bg.png") center / cover no-repeat fixed;
+  overflow: hidden;
+}
+
+.mi-page::before {
+  content: none;
+}
+
+.mi-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(2, 4, 18, 0.45), rgba(1, 3, 14, 0.62));
 }
 
 .mi-layout {
-  max-width: 1500px;
+  position: relative;
+  z-index: 2;
+  max-width: 1280px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 1.12fr 0.88fr;
-  gap: 16px;
+  grid-template-columns: 1fr 1.35fr;
+  gap: 26px;
+}
+
+.mi-column {
+  display: grid;
+  gap: 20px;
+  align-content: start;
 }
 
 .mi-panel {
   position: relative;
   overflow: hidden;
-  border-radius: 24px;
-  border: 1px solid rgba(167, 139, 250, 0.34);
+  border-radius: 30px;
+  border: 1px solid rgba(218, 177, 255, 0.46);
   background:
-    radial-gradient(160% 130% at 10% 8%, rgba(59, 130, 246, 0.12), transparent 40%),
-    radial-gradient(140% 130% at 92% 18%, rgba(244, 114, 182, 0.09), transparent 50%),
-    linear-gradient(128deg, rgba(15, 23, 42, 0.8), rgba(30, 27, 75, 0.68));
-  backdrop-filter: blur(21px) saturate(128%);
-  -webkit-backdrop-filter: blur(21px) saturate(128%);
+    linear-gradient(132deg, rgba(226, 235, 255, 0.08), rgba(186, 214, 255, 0.02) 28%, rgba(255, 255, 255, 0.01)),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0));
+  backdrop-filter: blur(14px) saturate(132%);
+  -webkit-backdrop-filter: blur(14px) saturate(132%);
   box-shadow:
-    inset 0 0 0 1px rgba(226, 232, 240, 0.08),
-    inset 0 0 42px rgba(148, 163, 184, 0.09),
-    0 0 52px rgba(99, 102, 241, 0.25),
-    0 18px 58px rgba(2, 6, 23, 0.62);
+    inset 0 0 0 1px rgba(238, 220, 255, 0.09),
+    inset 0 16px 44px rgba(190, 225, 255, 0.06),
+    0 0 26px rgba(198, 85, 255, 0.24),
+    0 0 80px rgba(98, 70, 190, 0.17);
 }
 
-.mi-left {
-  padding: 28px 24px 18px;
-}
-
-.mi-right {
-  padding: 18px 18px 16px;
-  border-color: rgba(96, 165, 250, 0.48);
-  box-shadow:
-    inset 0 0 0 1px rgba(147, 197, 253, 0.12),
-    0 0 56px rgba(59, 130, 246, 0.34),
-    0 18px 58px rgba(2, 6, 23, 0.64);
-}
-
-.mi-noise {
+.mi-panel::before {
+  content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image:
-    radial-gradient(rgba(226, 232, 240, 0.14) 1px, transparent 1px),
-    radial-gradient(rgba(191, 219, 254, 0.09) 1px, transparent 1px);
-  background-size: 3px 3px, 5px 5px;
-  background-position: 0 0, 2px 2px;
-  opacity: 0.3;
-  mix-blend-mode: soft-light;
+  background:
+    linear-gradient(118deg, rgba(255, 255, 255, 0.2) 6%, rgba(255, 255, 255, 0.03) 38%, transparent 56%),
+    radial-gradient(48% 40% at 100% 0%, rgba(203, 214, 255, 0.2), transparent 66%);
+  opacity: 0.32;
+}
+
+.mi-panel::after {
+  content: "";
+  position: absolute;
+  top: -28%;
+  left: -32%;
+  width: 50%;
+  height: 180%;
+  transform: rotate(26deg);
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, rgba(221, 240, 255, 0.17) 46%, transparent 100%);
+  opacity: 0.35;
 }
 
 .mi-panel > * {
@@ -61,341 +83,502 @@
   z-index: 1;
 }
 
-.mi-heading {
-  margin: 0;
-  font-size: clamp(2.1rem, 4vw, 3.18rem);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #f8fafc;
+.mi-question-card {
+  padding: 30px 30px 24px;
 }
 
-.mi-line {
-  margin: 10px 0 14px;
-  height: 1px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(148, 163, 184, 0.5), rgba(148, 163, 184, 0.1));
+.mi-kicker {
+  font-size: 0.88rem;
+  letter-spacing: 0.02em;
+  color: rgba(243, 232, 255, 0.92);
+  font-weight: 600;
 }
 
-.mi-question {
-  margin: 0;
-  font-size: clamp(1.9rem, 2.4vw, 3rem);
-  font-weight: 650;
-  color: #f1f5f9;
-}
-
-.mi-time {
-  margin: 8px 0 0;
-  font-size: clamp(1.9rem, 2.4vw, 2.9rem);
-  color: #fef08a;
-  font-weight: 700;
+.mi-question-text {
+  margin: 12px 0 0;
+  font-size: clamp(2rem, 2.7vw, 3.12rem);
+  line-height: 1.18;
+  font-weight: 500;
+  color: #f7f2ff;
+  letter-spacing: -0.01em;
 }
 
 .mi-buttons {
-  margin-top: 10px;
+  margin-top: 26px;
   display: flex;
-  gap: 10px;
+  gap: 14px;
 }
 
 .mi-btn {
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  border-radius: 11px;
-  padding: 8px 24px;
-  color: #e2e8f0;
-  font-size: 1.58rem;
-  font-weight: 600;
-  background: rgba(15, 23, 42, 0.64);
+  min-width: 154px;
+  border: 1px solid rgba(221, 195, 255, 0.5);
+  border-radius: 16px;
+  padding: 9px 15px;
+  color: #f8f5ff;
+  font-size: 1.75rem;
+  font-weight: 500;
+  line-height: 1;
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .mi-btn:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .mi-btn.ask {
-  border-color: rgba(167, 139, 250, 0.68);
-  background: linear-gradient(136deg, rgba(129, 140, 248, 0.78), rgba(139, 92, 246, 0.56));
-  box-shadow: 0 10px 24px rgba(99, 102, 241, 0.28);
+  background: linear-gradient(130deg, rgba(187, 186, 230, 0.52), rgba(130, 131, 188, 0.46));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .mi-btn.next {
-  background: rgba(15, 23, 42, 0.56);
+  background: linear-gradient(132deg, rgba(120, 65, 185, 0.7), rgba(88, 52, 152, 0.58));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 7px 18px rgba(120, 82, 198, 0.24);
+}
+
+.mi-transcript-card {
+  padding: 24px 30px 24px;
 }
 
 .mi-block-title {
   margin: 0;
-  font-size: 2.16rem;
-  color: #f8fafc;
+  font-size: 2.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #fbf7ff;
 }
 
 .mi-transcript-box {
-  margin-top: 10px;
-  min-height: 72px;
-  border-radius: 13px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: linear-gradient(130deg, rgba(30, 41, 59, 0.62), rgba(15, 23, 42, 0.52));
-  padding: 14px 16px;
-  color: #e2e8f0;
-  font-size: 1.6rem;
-  line-height: 1.45;
-}
-
-.mi-browser-note {
-  margin: 8px 0 0;
-  color: #fca5a5;
-  font-size: 1.14rem;
-}
-
-.mi-metric-grid {
-  margin-top: 12px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.mi-metric-card {
+  margin-top: 16px;
+  min-height: 126px;
+  max-height: 220px;
+  overflow-y: auto;
   border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.32);
-  background: linear-gradient(126deg, rgba(15, 23, 42, 0.72), rgba(30, 41, 59, 0.48));
-  padding: 12px 12px 10px;
+  border: 1px solid rgba(223, 198, 255, 0.26);
+  background: rgba(249, 236, 255, 0.22);
+  padding: 18px 20px;
+  color: rgba(252, 248, 255, 0.96);
+  font-size: 1.82rem;
+  line-height: 1.36;
 }
 
-.mi-metric-card.mi-wide {
-  grid-column: 1 / -1;
-}
-
-.mi-metric-card h4 {
-  margin: 0;
-  font-size: 1.95rem;
-  color: #f1f5f9;
-}
-
-.mi-metric-main {
-  margin: 6px 0 0;
-  font-size: 2.1rem;
-  font-weight: 700;
-  color: #bfdbfe;
-}
-
-.mi-metric-main span {
-  margin-left: 8px;
-  color: #cbd5e1;
-  font-size: 1.4rem;
-  font-weight: 500;
-}
-
-.mi-metric-sub {
-  margin: 6px 0 0;
-  color: #cbd5e1;
-  font-size: 1.56rem;
-}
-
-.mi-segments {
-  margin-top: 10px;
+.mi-wave {
+  margin-top: 18px;
+  height: 40px;
   display: grid;
-  grid-template-columns: repeat(28, minmax(0, 1fr));
-  gap: 2px;
+  grid-template-columns: repeat(40, minmax(0, 1fr));
+  gap: 5px;
+  align-items: center;
 }
 
-.mi-segments span {
-  height: 10px;
-  border-radius: 2px;
-  background: rgba(71, 85, 105, 0.78);
+.mi-wave span {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(240, 171, 252, 0.22), rgba(196, 181, 253, 0.82));
+  animation: miPulse 2200ms ease-in-out infinite;
+  opacity: 0.72;
 }
 
-.mi-segments.mi-blue span.on {
-  background: linear-gradient(180deg, #67e8f9, #4f46e5);
+.mi-time-card {
+  margin-top: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(227, 200, 255, 0.3);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: auto 1px auto;
+  align-items: end;
+  gap: 20px;
 }
 
-.mi-segments.mi-green span.on {
-  background: linear-gradient(180deg, #86efac, #7dd3fc);
+.mi-time-primary {
+  display: grid;
+  gap: 6px;
+}
+
+.mi-time-primary span {
+  font-size: 1.1rem;
+  color: rgba(236, 225, 255, 0.92);
+  font-weight: 600;
+}
+
+.mi-time-primary strong {
+  font-size: 3.1rem;
+  line-height: 1;
+  color: #f6f0ff;
+  font-weight: 700;
+}
+
+.mi-time-divider {
+  width: 1px;
+  height: 100%;
+  background: rgba(226, 213, 255, 0.28);
+}
+
+.mi-time-secondary {
+  color: rgba(237, 226, 255, 0.9);
+  font-size: 1.1rem;
+  margin-bottom: 6px;
 }
 
 .mi-tip {
-  margin: 10px 2px 0;
-  color: #d1d5db;
-  font-size: 1.26rem;
-  line-height: 1.45;
+  margin: 14px 2px 0;
+  color: rgba(240, 229, 255, 0.9);
+  font-size: 0.95rem;
+  line-height: 1.42;
 }
 
-.mi-mood-chip {
+.mi-browser-note {
+  margin: 12px 0 0;
+  color: #fecaca;
+  font-size: 0.9rem;
+}
+
+.mi-right-shell {
+  padding: 24px 24px 22px;
+  display: grid;
+  gap: 16px;
+}
+
+.mi-live-pill {
   width: fit-content;
-  margin: 2px 0 10px;
-  border-radius: 13px;
-  border: 1px solid rgba(125, 211, 252, 0.56);
-  background: linear-gradient(122deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.78));
-  box-shadow: 0 0 20px rgba(125, 211, 252, 0.22);
-  padding: 8px 16px;
-  font-size: 1.7rem;
-  font-weight: 600;
-  color: #e2e8f0;
+  border-radius: 999px;
+  border: 1px solid rgba(241, 173, 235, 0.4);
+  background: linear-gradient(135deg, rgba(241, 90, 164, 0.64), rgba(198, 86, 238, 0.52));
+  color: #ffe6fb;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  padding: 7px 16px;
 }
 
-.mi-right .video-recorder {
-  display: block;
+.mi-camera-card {
+  position: relative;
+  border-radius: 28px;
+  border: 1px solid rgba(212, 175, 255, 0.42);
+  background:
+    linear-gradient(145deg, rgba(195, 227, 255, 0.08), rgba(255, 255, 255, 0.01)),
+    rgba(255, 255, 255, 0.02);
+  padding: 18px;
 }
 
-.mi-right .mi-camera-frame {
-  border-radius: 14px;
-  border: 1px solid rgba(96, 165, 250, 0.58);
+.mi-camera-card .video-recorder {
+  width: 100%;
+}
+
+.mi-camera-card .mi-camera-frame {
+  position: relative;
+  border-radius: 20px;
+  border: 1px solid rgba(212, 175, 255, 0.42);
   overflow: hidden;
-  background: rgba(2, 6, 23, 0.88);
-  box-shadow:
-    inset 0 0 0 1px rgba(191, 219, 254, 0.16),
-    0 0 28px rgba(59, 130, 246, 0.26);
+  background: rgba(2, 2, 12, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
-.mi-right .mi-camera-video {
+.mi-camera-card .mi-camera-video {
   width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
   display: block;
 }
 
-.mi-right-bottom {
-  margin-top: 12px;
-  display: grid;
-  grid-template-columns: 0.58fr 0.42fr;
-  gap: 10px;
-}
-
-.mi-ring-shell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px;
-}
-
-.mi-ring {
-  width: min(27vw, 250px);
-  height: min(27vw, 250px);
+.mi-camera-dot {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  padding: 8px;
-  box-shadow:
-    0 0 28px rgba(34, 211, 238, 0.24),
-    0 0 42px rgba(250, 204, 21, 0.18);
+  background: #a7ffa6;
+  box-shadow: 0 0 14px rgba(167, 255, 166, 0.72);
 }
 
-.mi-ring-core {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.9));
+.mi-camera-overlay {
+  position: absolute;
+  inset: 0;
   display: grid;
-  place-content: center;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  background: rgba(3, 3, 12, 0.86);
+  color: rgba(244, 235, 255, 0.78);
   text-align: center;
-  box-shadow: inset 0 0 28px rgba(148, 163, 184, 0.18);
 }
 
-.mi-ring-value {
-  font-size: clamp(2.35rem, 4vw, 4rem);
-  font-weight: 700;
-  color: #f8fafc;
+.mi-camera-off-icon {
+  width: min(30%, 132px);
+  min-width: 92px;
+  color: rgba(244, 235, 255, 0.95);
 }
 
-.mi-ring-label {
-  margin-top: 2px;
-  color: #d1d5db;
-  font-size: 1.55rem;
+.mi-camera-overlay p {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.01em;
 }
 
-.mi-right-stats {
+.mi-bottom-stats {
+  display: grid;
+  grid-template-columns: 1.12fr 0.88fr;
+  gap: 12px;
+}
+
+.mi-stat-card {
+  border-radius: 20px;
+  border: 1px solid rgba(221, 191, 255, 0.34);
+  background:
+    linear-gradient(146deg, rgba(207, 229, 255, 0.09), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.02);
+  padding: 12px 14px;
+  text-align: center;
+}
+
+.mi-stat-card.detail {
+  text-align: left;
   display: grid;
   gap: 8px;
 }
 
-.mi-rstat {
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  background: linear-gradient(130deg, rgba(15, 23, 42, 0.72), rgba(30, 41, 59, 0.48));
-  padding: 10px 10px 8px;
+.mi-stat-card.detail .mi-time-card {
+  margin-top: 0;
+  padding: 12px 12px;
+  border-radius: 14px;
+  gap: 12px;
 }
 
-.mi-rstat-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 1.48rem;
-  color: #e2e8f0;
+.mi-stat-card.detail .mi-time-primary span {
+  font-size: 0.9rem;
 }
 
-.mi-rstat .mi-segments {
-  grid-template-columns: repeat(16, minmax(0, 1fr));
-  margin-top: 8px;
+.mi-stat-card.detail .mi-time-primary strong {
+  font-size: 2.45rem;
 }
 
-.mi-rstat .mi-segments span {
-  height: 8px;
+.mi-stat-card.detail .mi-time-secondary {
+  font-size: 0.92rem;
 }
 
-.mi-session-btn {
-  margin-top: 10px;
-  width: 100%;
-  border-radius: 13px;
-  border: 1px solid rgba(96, 165, 250, 0.76);
-  padding: 10px 14px;
-  font-size: 2rem;
+.mi-stat-card.detail .mi-review-card {
+  margin-top: 0;
+  padding: 8px 10px;
+}
+
+.mi-stat-card.detail .mi-review-list {
+  margin-top: 0;
+}
+
+.mi-stat-card.detail .mi-tip {
+  margin: 2px 2px 0;
+  font-size: 0.82rem;
+}
+
+.mi-stat-title {
+  font-size: 1.06rem;
   font-weight: 600;
-  color: #f8fafc;
-  background: linear-gradient(128deg, rgba(37, 99, 235, 0.45), rgba(167, 139, 250, 0.35));
-  box-shadow: 0 0 22px rgba(59, 130, 246, 0.3);
-  cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  color: rgba(245, 237, 255, 0.96);
 }
 
-.mi-session-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 28px rgba(96, 165, 250, 0.38);
+.mi-stat-value {
+  margin-top: 8px;
+  font-size: clamp(2.2rem, 3.8vw, 3.6rem);
+  line-height: 1;
+  color: #faf5ff;
+  font-weight: 700;
+}
+
+.mi-stat-value span {
+  font-size: 1.1rem;
+  color: #b9f7b0;
+  font-weight: 600;
+}
+
+.mi-stat-sub {
+  margin-top: 8px;
+  font-size: 1rem;
+  color: rgba(225, 212, 245, 0.92);
+}
+
+.mi-stat-sub.good {
+  color: #9ef59f;
+  font-weight: 600;
+}
+
+.mi-pace-advice {
+  margin-top: 8px;
+  border-top: 1px solid rgba(210, 181, 255, 0.22);
+  padding-top: 7px;
+  display: grid;
+  gap: 3px;
+}
+
+.mi-pace-advice p {
+  margin: 0;
+  color: rgba(233, 221, 247, 0.9);
+  font-size: 0.75rem;
+  line-height: 1.26;
 }
 
 .mi-awaiting {
-  margin: 10px 0 0;
+  margin: 4px 0 0;
   text-align: center;
-  color: #cbd5e1;
-  font-size: 1.44rem;
+  color: rgba(244, 235, 255, 0.88);
+  font-size: 1rem;
 }
 
-.mi-right .mi-camera-title,
-.mi-right .mi-emotion,
-.mi-right .mi-record-btn,
-.mi-right .mi-camera-playback {
+.mi-review-card {
+  margin-top: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(210, 181, 255, 0.32);
+  background: linear-gradient(134deg, rgba(198, 223, 255, 0.09), rgba(255, 255, 255, 0.02));
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.mi-review-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.mi-review-head span {
+  color: rgba(236, 226, 255, 0.92);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.mi-review-badge {
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.73rem;
+  line-height: 1;
+  border: 1px solid transparent;
+}
+
+.mi-review-badge.pending {
+  color: #ddd6fe;
+  border-color: rgba(196, 181, 253, 0.38);
+  background: rgba(109, 40, 217, 0.2);
+}
+
+.mi-review-badge.strong {
+  color: #dcfce7;
+  border-color: rgba(74, 222, 128, 0.48);
+  background: rgba(22, 163, 74, 0.22);
+}
+
+.mi-review-badge.partial {
+  color: #fef9c3;
+  border-color: rgba(250, 204, 21, 0.52);
+  background: rgba(161, 98, 7, 0.26);
+}
+
+.mi-review-badge.off {
+  color: #fee2e2;
+  border-color: rgba(248, 113, 113, 0.52);
+  background: rgba(153, 27, 27, 0.3);
+}
+
+.mi-review-card p {
+  margin: 0;
+  color: rgba(236, 225, 255, 0.88);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.mi-review-list {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mi-review-list > div {
+  border-radius: 999px;
+  border: 1px solid rgba(210, 181, 255, 0.32);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px 10px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mi-review-list span {
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.73rem;
+}
+
+.mi-review-list strong {
+  color: #f8fafc;
+  font-size: 0.74rem;
+}
+
+.mi-right-shell .mi-camera-title,
+.mi-right-shell .mi-emotion,
+.mi-right-shell .mi-record-btn,
+.mi-right-shell .mi-camera-playback {
   display: none;
 }
 
-@media (max-width: 1240px) {
+@keyframes miPulse {
+  0%,
+  100% {
+    transform: scaleY(0.9);
+    opacity: 0.32;
+  }
+  50% {
+    transform: scaleY(2.6);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 1220px) {
   .mi-page {
-    padding: 20px 14px;
+    padding: 24px 14px;
   }
 
   .mi-layout {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  .mi-ring {
-    width: 220px;
-    height: 220px;
+  .mi-btn {
+    font-size: 1.22rem;
+    min-width: 0;
+    flex: 1;
   }
 }
 
 @media (max-width: 760px) {
-  .mi-left,
-  .mi-right {
-    padding: 16px 14px;
+  .mi-question-card,
+  .mi-transcript-card,
+  .mi-right-shell {
+    padding: 18px 14px;
+    border-radius: 22px;
   }
 
   .mi-buttons {
     flex-direction: column;
   }
 
-  .mi-btn {
-    width: 100%;
-  }
-
-  .mi-metric-grid {
+  .mi-time-card {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
 
-  .mi-right-bottom {
+  .mi-time-divider {
+    display: none;
+  }
+
+  .mi-time-primary strong {
+    font-size: 2.5rem;
+  }
+
+  .mi-bottom-stats {
     grid-template-columns: 1fr;
   }
 }

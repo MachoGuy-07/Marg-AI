@@ -1,18 +1,25 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart as RechartsRadarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import "../styles/report.css";
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-
-const PEER_USER_CASES = [
-  { confidence: 7.1, pace: 6.8, clarity: 7.3, eyeContact: 74, posture: 72, vocabulary: 70 },
-  { confidence: 6.4, pace: 7.2, clarity: 6.9, eyeContact: 70, posture: 67, vocabulary: 66 },
-  { confidence: 8.0, pace: 7.6, clarity: 7.7, eyeContact: 82, posture: 79, vocabulary: 75 },
-  { confidence: 6.9, pace: 6.6, clarity: 7.0, eyeContact: 69, posture: 71, vocabulary: 68 },
-  { confidence: 7.5, pace: 7.1, clarity: 7.4, eyeContact: 76, posture: 73, vocabulary: 72 },
-  { confidence: 5.9, pace: 6.1, clarity: 6.0, eyeContact: 63, posture: 61, vocabulary: 60 },
-  { confidence: 7.8, pace: 7.4, clarity: 7.6, eyeContact: 80, posture: 77, vocabulary: 74 },
-  { confidence: 6.6, pace: 6.8, clarity: 6.5, eyeContact: 68, posture: 66, vocabulary: 65 },
-];
 
 function safeParse(jsonText) {
   try {
@@ -22,217 +29,245 @@ function safeParse(jsonText) {
   }
 }
 
-function countWords(text) {
-  return (text.toLowerCase().match(/\b[a-z']+\b/g) || []).length;
+function tokenize(text) {
+  return (String(text || "").toLowerCase().match(/\b[a-z']+\b/g) || []).map((word) =>
+    word.replace(/'/g, "")
+  );
 }
 
-function vocabularyFromTranscript(text) {
-  const words = text.toLowerCase().match(/\b[a-z']+\b/g) || [];
-  if (!words.length) return 0;
-  return clamp(Math.round((new Set(words).size / words.length) * 100), 0, 100);
+function transcriptStructureScore(text) {
+  const transcript = String(text || "").trim();
+  if (!transcript) return 0;
+  const sentenceCount = Math.max(1, (transcript.match(/[.!?]+/g) || []).length);
+  const words = tokenize(transcript);
+  const avgSentenceLength = words.length / sentenceCount;
+  const transitionHits = ["first", "then", "because", "result", "finally"].filter((token) =>
+    transcript.toLowerCase().includes(token)
+  ).length;
+  const lengthBalance = clamp(100 - Math.abs(avgSentenceLength - 16) * 5.2, 20, 100);
+  return clamp(Math.round(lengthBalance * 0.8 + transitionHits * 8), 0, 100);
 }
 
-function paceControlPercent(wpm) {
-  if (!wpm) return 0;
-  const deviation = Math.abs(wpm - 145);
-  const effectiveDeviation = Math.max(0, deviation - 15);
-  return clamp(Math.round(100 - effectiveDeviation * 1.1), 0, 100);
-}
-
-function toPercentFrom10(score) {
-  return clamp(Math.round((score || 0) * 10), 0, 100);
-}
-
-function easeTen(score, options = {}) {
-  const { boost = 0.6, power = 0.9, minIfPositive = 0.8 } = options;
-  const safe = clamp(Number(score) || 0, 0, 10);
-  if (safe <= 0) return 0;
-  const eased = Math.pow(safe / 10, power) * 10 + boost;
-  return clamp(Number(Math.max(minIfPositive, eased).toFixed(1)), 0, 10);
-}
-
-function easePercent(value, options = {}) {
-  const { boost = 7, power = 0.9, minIfPositive = 6 } = options;
+function lenientScore(value, hasSpeechSignal, floor = 0) {
   const safe = clamp(Math.round(Number(value) || 0), 0, 100);
-  if (safe <= 0) return 0;
-  const eased = Math.pow(safe / 100, power) * 100 + boost;
-  return clamp(Math.round(Math.max(minIfPositive, eased)), 0, 100);
+  if (!hasSpeechSignal) return clamp(safe, floor, 100);
+  return clamp(Math.round(safe * 0.88 + 12), floor, 100);
 }
 
-function normalizeMetrics(analysis, transcript) {
-  const rawConfidence10 = clamp(Number(analysis?.confidence_score) || 0, 0, 10);
-  const rawPace10 = clamp(Number(analysis?.pace_score) || 0, 0, 10);
-  const rawClarity10 = clamp(
-    Number(analysis?.clarity_score) ||
-      Math.round((Number(analysis?.speaking_clarity) || 0) / 10) ||
-      Number(analysis?.engagement_score) ||
-      0,
-    0,
-    10
-  );
+function scoreBand(percent) {
+  if (percent >= 88) return "Excellent";
+  if (percent >= 76) return "Very Good";
+  if (percent >= 64) return "Good Progress";
+  if (percent >= 52) return "Developing Well";
+  return "Building Base";
+}
 
-  const confidence10 = easeTen(rawConfidence10);
-  const pace10 = easeTen(rawPace10);
-  const clarity10 = easeTen(rawClarity10, { boost: 0.7, power: 0.88, minIfPositive: 1 });
+function hashString(text) {
+  const str = String(text || "");
+  let hash = 2166136261;
+  for (let i = 0; i < str.length; i += 1) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
 
-  const wordsPerMinute = Math.max(0, Number(analysis?.words_per_minute) || 0);
-  const fillerCount = Math.max(0, Number(analysis?.filler_count) || 0);
-  const transcriptWordCount = countWords(transcript);
-  const fillerRate = transcriptWordCount
-    ? fillerCount / transcriptWordCount
-    : wordsPerMinute
-    ? clamp(fillerCount / (wordsPerMinute * 0.8), 0, 1)
-    : 0;
-
-  const confidencePercent = easePercent(toPercentFrom10(confidence10), {
-    boost: 3,
-    power: 0.95,
-    minIfPositive: 10,
-  });
-  const pacePercent = easePercent(toPercentFrom10(pace10), {
-    boost: 3,
-    power: 0.95,
-    minIfPositive: 10,
-  });
-  const clarityPercentRaw =
-    clamp(Math.round(Number(analysis?.speaking_clarity) || 0), 0, 100) ||
-    toPercentFrom10(clarity10);
-  const clarityPercent = easePercent(clarityPercentRaw, {
-    boost: 4,
-    power: 0.93,
-    minIfPositive: 12,
-  });
-
-  const eyeContact = easePercent(Math.round(Number(analysis?.eye_contact) || 0), {
-    boost: 6,
-    power: 0.9,
-    minIfPositive: 8,
-  });
-  const postureStability = easePercent(
-    Math.round(Number(analysis?.posture_stability) || 0),
-    {
-      boost: 6,
-      power: 0.9,
-      minIfPositive: 8,
-    }
-  );
-  const paceControl = paceControlPercent(wordsPerMinute);
-  const vocabularyRange =
-    easePercent(Math.round(Number(analysis?.vocabulary_diversity) || 0), {
-      boost: 6,
-      power: 0.9,
-      minIfPositive: 8,
-    }) || easePercent(vocabularyFromTranscript(transcript), { boost: 4, power: 0.92, minIfPositive: 8 });
-  const fillerControl = easePercent(Math.round((1 - fillerRate) * 100), {
-    boost: 2,
-    power: 0.96,
-    minIfPositive: 12,
-  });
-
-  const radarSkills = [
-    { label: "Clarity", value: clarityPercent },
-    { label: "Pace", value: paceControl },
-    { label: "Eye Contact", value: eyeContact },
-    { label: "Posture", value: postureStability },
-    { label: "Vocabulary", value: vocabularyRange },
-  ];
-
-  return {
-    confidence10,
-    pace10,
-    clarity10,
-    confidencePercent,
-    pacePercent,
-    clarityPercent,
-    wordsPerMinute,
-    eyeContact,
-    postureStability,
-    paceControl,
-    vocabularyRange,
-    fillerControl,
-    radarSkills,
-    aiFeedback: Array.isArray(analysis?.ai_feedback) ? analysis.ai_feedback : [],
+function seededRandomFactory(seed) {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-function createAssistantFocus(metrics) {
-  const dimensions = [
-    {
-      key: "clarity",
-      label: "Clarity",
-      value: metrics.clarityPercent,
-      suggestion: "Slow down sentence starts and emphasize one core message per answer.",
-    },
-    {
-      key: "pace",
-      label: "Pace Control",
-      value: metrics.paceControl,
-      suggestion: "Keep pace between 125-155 WPM and pause briefly after key points.",
-    },
-    {
-      key: "eyeContact",
-      label: "Eye Contact",
-      value: metrics.eyeContact,
-      suggestion: "Look at the camera lens while delivering final conclusions.",
-    },
-    {
-      key: "posture",
-      label: "Posture Stability",
-      value: metrics.postureStability,
-      suggestion: "Square shoulders and keep your head aligned with the lens.",
-    },
-    {
-      key: "vocabulary",
-      label: "Vocabulary Range",
-      value: metrics.vocabularyRange,
-      suggestion: "Use stronger action verbs and fewer repeated filler phrases.",
-    },
-    {
-      key: "fillerControl",
-      label: "Filler Control",
-      value: metrics.fillerControl,
-      suggestion: "Replace filler words with intentional micro-pauses.",
-    },
-  ];
-
-  const weakest = [...dimensions].sort((a, b) => a.value - b.value).slice(0, 3);
-  const strongest = [...dimensions].sort((a, b) => b.value - a.value).slice(0, 2);
-
-  const coachScore = Math.round(
-    (metrics.clarityPercent +
-      metrics.paceControl +
-      metrics.eyeContact +
-      metrics.postureStability +
-      metrics.vocabularyRange) /
-      5
-  );
-
-  return { weakest, strongest, coachScore };
+function createCommunitySamples(seedText, count = 10) {
+  const rand = seededRandomFactory(hashString(seedText));
+  return Array.from({ length: count }).map((_, index) => {
+    const baseline = 56 + rand() * 30;
+    const confidence = clamp(Math.round(baseline + (rand() - 0.5) * 14), 42, 96);
+    const pace = clamp(Math.round(baseline + (rand() - 0.5) * 12), 40, 96);
+    const clarity = clamp(Math.round(baseline + (rand() - 0.5) * 13), 42, 97);
+    const eyeContact = clamp(Math.round(baseline + (rand() - 0.5) * 18), 35, 98);
+    const posture = clamp(Math.round(baseline + (rand() - 0.5) * 16), 35, 98);
+    const vocabulary = clamp(Math.round(baseline + (rand() - 0.5) * 15), 38, 99);
+    const relevance = clamp(Math.round(clarity * 0.5 + confidence * 0.28 + pace * 0.22), 38, 98);
+    const overall = clamp(Math.round((confidence + pace + clarity + relevance) / 4), 42, 97);
+    return {
+      id: index + 1,
+      label: `S${index + 1}`,
+      confidence,
+      pace,
+      clarity,
+      eyeContact,
+      posture,
+      vocabulary,
+      relevance,
+      overall,
+    };
+  });
 }
 
-function ScoreDial({ title, value10, percent, accent = "cyan" }) {
-  const [animated, setAnimated] = useState(0);
+function createWaveTrend(points, tick, pointsPerSegment = 7) {
+  const source = Array.isArray(points) && points.length
+    ? points
+    : [{ label: "Q1", relevance: 0, clarity: 0, confidence: 0, pace: 0, overall: 0 }];
 
-  useEffect(() => {
-    const target = clamp(value10 || 0, 0, 10);
-    let current = 0;
-    const interval = setInterval(() => {
-      current = Math.min(target, current + 0.2);
-      setAnimated(Number(current.toFixed(1)));
-      if (current >= target) clearInterval(interval);
-    }, 20);
-    return () => clearInterval(interval);
-  }, [value10]);
+  const safeSource = source.length === 1 ? [...source, { ...source[0], label: source[0].label }] : source;
+  const segmentCount = Math.max(1, safeSource.length - 1);
+  const totalPoints = segmentCount * pointsPerSegment + 1;
 
+  return Array.from({ length: totalPoints }).map((_, index) => {
+    const progress = index / Math.max(1, totalPoints - 1);
+    const exact = progress * segmentCount;
+    const left = Math.floor(exact);
+    const right = Math.min(safeSource.length - 1, left + 1);
+    const local = exact - left;
+
+    const blend = (key) => {
+      const a = Number(safeSource[left][key]) || 0;
+      const b = Number(safeSource[right][key]) || 0;
+      return a + (b - a) * local;
+    };
+
+    const phase = progress * Math.PI * 2 + tick * 0.85;
+    const relevance = clamp(Math.round(blend("relevance") + Math.sin(phase * 1.25) * 3.8), 0, 100);
+    const clarity = clamp(Math.round(blend("clarity") + Math.cos(phase * 1.08 + 1.1) * 3.3), 0, 100);
+    const confidence = clamp(Math.round(blend("confidence") + Math.sin(phase * 1.32 + 2.4) * 2.9), 0, 100);
+    const pace = clamp(Math.round(blend("pace") + Math.cos(phase * 0.95 + 0.5) * 2.4), 0, 100);
+    const overall = clamp(
+      Math.round(relevance * 0.42 + clarity * 0.22 + confidence * 0.2 + pace * 0.16),
+      0,
+      100
+    );
+
+    return {
+      label: index % pointsPerSegment === 0 ? safeSource[Math.min(left, safeSource.length - 1)].label : "",
+      relevance,
+      clarity,
+      confidence,
+      pace,
+      overall,
+    };
+  });
+}
+
+function createCommunityWave(samples, userOverall, tick) {
+  const source = Array.isArray(samples) && samples.length
+    ? samples
+    : [{ label: "S1", overall: 0 }, { label: "S2", overall: 0 }];
+
+  return source.map((sample, index) => {
+    const phase = (index / Math.max(1, source.length - 1)) * Math.PI * 2 + tick * 0.72;
+    const user = clamp(Math.round(userOverall + Math.sin(phase) * 2.6), 0, 100);
+    const top = clamp(Math.round(sample.overall + 12 + Math.cos(phase * 0.85) * 2.1), 0, 100);
+    return {
+      label: sample.label,
+      you: user,
+      community: sample.overall,
+      top,
+    };
+  });
+}
+
+function buildMetrics(analysis, transcript) {
+  const words = tokenize(transcript);
+  const transcriptWords = words.length;
+  const hasSpeechSignal =
+    transcriptWords >= 8 ||
+    Number(analysis?.words_per_minute) > 0 ||
+    Number(analysis?.speaking_clarity) > 0 ||
+    Number(analysis?.confidence_index) > 0;
+
+  const wpm = clamp(Math.round(Number(analysis?.words_per_minute) || 0), 0, 240);
+  const pauseRatio = clamp(Number(analysis?.pause_ratio ?? 0), 0, 1);
+  const fillerCount = Math.max(0, Number(analysis?.filler_count) || 0);
+  const fillerRate = transcriptWords ? fillerCount / transcriptWords : 0;
+  const voiceStability = clamp(Math.round(Number(analysis?.voice_stability) || 0), 0, 100);
+
+  const vocabularyFromTranscript = transcriptWords
+    ? Math.round((new Set(words).size / transcriptWords) * 100)
+    : 0;
+  const vocabulary = lenientScore(
+    Number(analysis?.vocabulary_diversity) || vocabularyFromTranscript,
+    hasSpeechSignal,
+    22
+  );
+
+  const paceRaw =
+    Math.round(Number(analysis?.pace_score) * 10) ||
+    clamp(Math.round(100 - Math.max(0, Math.abs(wpm - 145) - 12) * 1.12), 0, 100);
+  const pace = lenientScore(paceRaw, hasSpeechSignal, 24);
+
+  const fillerControl = lenientScore(
+    clamp(Math.round(100 - fillerRate * 220 - pauseRatio * 34), 0, 100),
+    hasSpeechSignal,
+    24
+  );
+
+  const clarityRaw =
+    clamp(Math.round(Number(analysis?.speaking_clarity) || 0), 0, 100) ||
+    Math.round(Number(analysis?.clarity_score) * 10) ||
+    Math.round(vocabulary * 0.35 + pace * 0.33 + fillerControl * 0.32);
+  const clarity = lenientScore(clarityRaw, hasSpeechSignal, 24);
+
+  const eyeContact = lenientScore(Number(analysis?.eye_contact) || clarity * 0.4 + 20, hasSpeechSignal, 20);
+  const posture = lenientScore(
+    Number(analysis?.posture_stability) || voiceStability * 0.45 + (1 - pauseRatio) * 45,
+    hasSpeechSignal,
+    20
+  );
+
+  const confidenceRaw =
+    Number(analysis?.confidence_index) ||
+    Math.round(clarity * 0.28 + pace * 0.18 + eyeContact * 0.25 + posture * 0.2 + fillerControl * 0.09);
+  const confidence = lenientScore(confidenceRaw, hasSpeechSignal, 24);
+
+  return {
+    hasSpeechSignal,
+    wordsPerMinute: wpm,
+    pauseRatio,
+    fillerRate,
+    confidencePercent: confidence,
+    pacePercent: pace,
+    clarityPercent: clarity,
+    eyeContact,
+    postureStability: posture,
+    vocabularyRange: vocabulary,
+    confidence10: clamp(Number((confidence / 10).toFixed(1)), 0, 10),
+    pace10: clamp(Number((pace / 10).toFixed(1)), 0, 10),
+    clarity10: clamp(Number((clarity / 10).toFixed(1)), 0, 10),
+    aiFeedback: Array.isArray(analysis?.ai_feedback) ? analysis.ai_feedback : [],
+    questionAlignment: clamp(Math.round(Number(analysis?.question_alignment_avg) || 0), 0, 100),
+  };
+}
+
+function ReportTooltip({ active, payload, label, suffix = "" }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rp-tooltip">
+      <strong>{label}</strong>
+      {payload.map((entry) => (
+        <div key={`${entry.name}-${entry.value}`}>
+          <span>{entry.name}</span>
+          <b>
+            {Math.round(Number(entry.value) || 0)}
+            {suffix}
+          </b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScoreDial({ title, value10, percent, accent }) {
   return (
     <div className={`rp-score-dial rp-${accent}`}>
       <div className="rp-score-title">{title}</div>
-      <div
-        className="rp-dial-ring"
-        style={{ "--dial-fill": `${clamp(Math.round(percent), 0, 100)}%` }}
-      >
+      <div className="rp-dial-ring" style={{ "--dial-fill": `${clamp(Math.round(percent), 0, 100)}%` }}>
         <div className="rp-dial-core">
-          <span>{Math.round(animated)}/10</span>
+          <span>{clamp(Number(value10) || 0, 0, 10).toFixed(1)}/10</span>
         </div>
       </div>
       <div className="rp-dial-bar" />
@@ -240,401 +275,501 @@ function ScoreDial({ title, value10, percent, accent = "cyan" }) {
   );
 }
 
-function TrendChart({ points }) {
-  const width = 640;
-  const height = 260;
-  const margin = { top: 18, right: 20, bottom: 34, left: 40 };
-  const chartW = width - margin.left - margin.right;
-  const chartH = height - margin.top - margin.bottom;
-
-  const p = points.length ? points : [{ label: "Test 1", confidence: 0, pace: 0, clarity: 0 }];
-  const stepX = p.length > 1 ? chartW / (p.length - 1) : 0;
-
-  const y = (value) => margin.top + ((10 - clamp(value, 0, 10)) / 10) * chartH;
-  const x = (index) => margin.left + index * stepX;
-
-  const makePath = (key) =>
-    p
-      .map((point, index) => `${x(index)},${y(point[key])}`)
-      .join(" ");
-
-  const confidencePath = makePath("confidence");
-  const clarityPath = makePath("clarity");
-  const pacePath = makePath("pace");
-
+function PerformanceTrendChart({ points, waveTick }) {
   return (
-    <div className="rp-trend-wrap">
-      <svg
-        className="rp-trend-svg"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label="Performance trend chart"
-      >
-        {[2, 4, 6, 8, 10].map((mark) => (
-          <g key={mark}>
-            <line
-              x1={margin.left}
-              x2={width - margin.right}
-              y1={y(mark)}
-              y2={y(mark)}
-              className="rp-grid-line"
-            />
-            <text x={8} y={y(mark) + 4} className="rp-axis-text">
-              {mark}
-            </text>
-          </g>
-        ))}
-
-        {p.map((_, index) => (
-          <line
-            key={`v-${index}`}
-            x1={x(index)}
-            x2={x(index)}
-            y1={margin.top}
-            y2={height - margin.bottom}
-            className="rp-grid-line rp-grid-line-v"
+    <div className="rp-chart-host">
+      <ResponsiveContainer width="100%" height={280}>
+        <LineChart key={`perf-${waveTick}`} data={points} margin={{ top: 16, right: 14, left: -16, bottom: 6 }}>
+          <defs>
+            <filter id="rpGlowCyan" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3.2" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="rpGlowViolet" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.8" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="rpGlowPink" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.8" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <CartesianGrid stroke="rgba(148, 163, 184, 0.2)" strokeDasharray="4 4" />
+          <XAxis dataKey="label" stroke="#9fb2d8" tickLine={false} axisLine={false} />
+          <YAxis domain={[0, 100]} stroke="#9fb2d8" tickLine={false} axisLine={false} />
+          <Tooltip content={<ReportTooltip suffix="%" />} />
+          <Legend iconType="circle" />
+          <Line
+            type="monotone"
+            dataKey="relevance"
+            name="Relevance"
+            stroke="#67e8f9"
+            strokeWidth={2.9}
+            dot={false}
+            filter="url(#rpGlowCyan)"
+            strokeLinecap="round"
+            isAnimationActive
+            animationDuration={1800}
+            animationEasing="ease-in-out"
           />
+          <Line
+            type="monotone"
+            dataKey="clarity"
+            name="Clarity"
+            stroke="#a78bfa"
+            strokeWidth={2.8}
+            dot={false}
+            filter="url(#rpGlowViolet)"
+            strokeLinecap="round"
+            isAnimationActive
+            animationDuration={1800}
+            animationEasing="ease-in-out"
+          />
+          <Line
+            type="monotone"
+            dataKey="confidence"
+            name="Confidence"
+            stroke="#f472b6"
+            strokeWidth={2.8}
+            dot={false}
+            filter="url(#rpGlowPink)"
+            strokeLinecap="round"
+            isAnimationActive
+            animationDuration={1800}
+            animationEasing="ease-in-out"
+          />
+          <Line
+            type="monotone"
+            dataKey="overall"
+            name="Overall"
+            stroke="#9effb2"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+            dot={false}
+            strokeLinecap="round"
+            isAnimationActive
+            animationDuration={1800}
+            animationEasing="ease-in-out"
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function StandingChart({ points, waveTick }) {
+  return (
+    <div className="rp-chart-host">
+      <ResponsiveContainer width="100%" height={210}>
+        <LineChart key={`standing-${waveTick}`} data={points} margin={{ top: 14, right: 12, left: -16, bottom: 6 }}>
+          <defs>
+            <filter id="rpGlowStandCyan" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3.2" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="rpGlowStandViolet" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.8" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="rpGlowWhite" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.6" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <CartesianGrid stroke="rgba(148, 163, 184, 0.18)" strokeDasharray="4 4" />
+          <XAxis dataKey="label" stroke="#9fb2d8" tickLine={false} axisLine={false} />
+          <YAxis domain={[0, 100]} stroke="#9fb2d8" tickLine={false} axisLine={false} />
+          <Tooltip content={<ReportTooltip suffix="%" />} />
+          <Legend iconType="circle" />
+          <Line
+            type="monotone"
+            dataKey="you"
+            name="You"
+            stroke="#67e8f9"
+            strokeWidth={2.8}
+            dot={false}
+            filter="url(#rpGlowStandCyan)"
+            strokeLinecap="round"
+            isAnimationActive
+            animationDuration={1700}
+            animationEasing="ease-in-out"
+          />
+          <Line
+            type="monotone"
+            dataKey="community"
+            name="Community (10 Samples)"
+            stroke="#c4b5fd"
+            strokeWidth={2.5}
+            dot={false}
+            filter="url(#rpGlowStandViolet)"
+            strokeLinecap="round"
+            isAnimationActive
+            animationDuration={1700}
+            animationEasing="ease-in-out"
+          />
+          <Line
+            type="monotone"
+            dataKey="top"
+            name="Top 10%"
+            stroke="#ffffff"
+            strokeWidth={2}
+            strokeDasharray="5 5"
+            dot={false}
+            filter="url(#rpGlowWhite)"
+            strokeLinecap="round"
+            isAnimationActive
+            animationDuration={1700}
+            animationEasing="ease-in-out"
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function SkillRadar({ skills, waveTick }) {
+  const data = skills.map((skill) => ({ skill: skill.label, score: clamp(Math.round(skill.value), 0, 100), fullMark: 100 }));
+  const radarFill = `rpRadarFill-${waveTick}`;
+  const radarGlow = `rpRadarGlow-${waveTick}`;
+  return (
+    <div className="rp-radar-wrap">
+      <ResponsiveContainer width="100%" height={290}>
+        <RechartsRadarChart key={`radar-${waveTick}`} data={data} outerRadius="72%">
+          <defs>
+            <linearGradient id={radarFill} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#5de9ff" stopOpacity={0.52} />
+              <stop offset="100%" stopColor="#d85bff" stopOpacity={0.45} />
+            </linearGradient>
+            <filter id={radarGlow} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3.2" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <PolarGrid stroke="rgba(148, 163, 184, 0.32)" />
+          <PolarAngleAxis dataKey="skill" tick={{ fill: "#d5def2", fontSize: 12 }} />
+          <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
+          <Radar
+            name="Skill"
+            dataKey="score"
+            stroke="#8d96ff"
+            fill={`url(#${radarFill})`}
+            strokeWidth={2.2}
+            filter={`url(#${radarGlow})`}
+            isAnimationActive
+            animationDuration={1800}
+            animationEasing="ease-in-out"
+          />
+          <Tooltip content={<ReportTooltip suffix="%" />} />
+        </RechartsRadarChart>
+      </ResponsiveContainer>
+      <div className="rp-radar-values">
+        {data.map((item) => (
+          <div key={item.skill}>
+            <span>{item.skill}</span>
+            <strong>{item.score}%</strong>
+          </div>
         ))}
-
-        <polyline points={confidencePath} className="rp-line rp-line-confidence" />
-        <polyline points={clarityPath} className="rp-line rp-line-clarity" />
-        <polyline points={pacePath} className="rp-line rp-line-pace" />
-
-        {p.map((point, index) => (
-          <g key={`pt-${index}`}>
-            <circle cx={x(index)} cy={y(point.confidence)} r="4" className="rp-dot rp-dot-confidence" />
-            <circle cx={x(index)} cy={y(point.clarity)} r="4" className="rp-dot rp-dot-clarity" />
-            <circle cx={x(index)} cy={y(point.pace)} r="4" className="rp-dot rp-dot-pace" />
-            <text x={x(index) - 16} y={height - 10} className="rp-axis-text">
-              {point.label}
-            </text>
-          </g>
-        ))}
-      </svg>
-
-      <div className="rp-legend">
-        <span className="lg-confidence">confidence</span>
-        <span className="lg-clarity">clarity</span>
-        <span className="lg-pace">pace</span>
       </div>
     </div>
   );
 }
 
-function RadarChart({ skills }) {
-  const size = 270;
-  const cx = size / 2;
-  const cy = size / 2;
-  const radius = 95;
-  const levels = [20, 40, 60, 80, 100];
-  const count = skills.length;
-
-  const polar = (index, value) => {
-    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / count;
-    const r = (clamp(value, 0, 100) / 100) * radius;
-    return [cx + Math.cos(angle) * r, cy + Math.sin(angle) * r];
-  };
-
-  const polygonFor = (value) =>
-    skills
-      .map((_, index) => {
-        const [x, y] = polar(index, value);
-        return `${x},${y}`;
-      })
-      .join(" ");
-
-  const dataPath = skills
-    .map((skill, index) => {
-      const [x, y] = polar(index, skill.value);
-      return `${x},${y}`;
-    })
-    .join(" ");
-
+function MomentumChart({ points, waveTick }) {
   return (
-    <div className="rp-radar-wrap">
-      <svg viewBox={`0 0 ${size} ${size}`} className="rp-radar-svg" role="img" aria-label="Skill radar chart">
-        {levels.map((level) => (
-          <polygon key={level} points={polygonFor(level)} className="rp-radar-grid" />
-        ))}
-
-        {skills.map((skill, index) => {
-          const [x, y] = polar(index, 100);
-          return <line key={skill.label} x1={cx} y1={cy} x2={x} y2={y} className="rp-radar-axis" />;
-        })}
-
-        <polygon points={dataPath} className="rp-radar-data" />
-
-        {skills.map((skill, index) => {
-          const [x, y] = polar(index, 112);
-          return (
-            <text key={`${skill.label}-label`} x={x} y={y} className="rp-radar-label">
-              {skill.label}
-            </text>
-          );
-        })}
-      </svg>
+    <div className="rp-mini-trend">
+      <ResponsiveContainer width="100%" height={96}>
+        <AreaChart key={`momentum-${waveTick}`} data={points} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+          <defs>
+            <linearGradient id="rpMomentumFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#67e8f9" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="#67e8f9" stopOpacity={0.04} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke="rgba(191, 219, 254, 0.16)" strokeDasharray="3 3" />
+          <XAxis dataKey="label" hide />
+          <YAxis domain={[0, 100]} hide />
+          <Area
+            type="monotone"
+            dataKey="overall"
+            stroke="#67e8f9"
+            fill="url(#rpMomentumFill)"
+            strokeWidth={2.4}
+            isAnimationActive
+            animationDuration={1700}
+            animationEasing="ease-in-out"
+          />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 }
 
 export default function Report() {
-  const storedAnalysis = localStorage.getItem("report_analysis");
-  const storedTranscript = localStorage.getItem("report_transcript");
-  const analysis = storedAnalysis ? safeParse(storedAnalysis) : null;
-  const transcript = storedTranscript || "Transcript not captured";
+  const analysisRaw = localStorage.getItem("report_analysis") || "null";
+  const analysis = safeParse(analysisRaw);
+  const transcript = localStorage.getItem("report_transcript") || "Transcript not captured";
 
   const [history, setHistory] = useState([]);
   const [saving, setSaving] = useState(false);
-  const shellRef = useRef(null);
-  const pointerRef = useRef({ x: 0, y: 0 });
-  const frameRef = useRef(null);
-
-  const metrics = useMemo(
-    () => normalizeMetrics(analysis || {}, transcript),
-    [analysis, transcript]
-  );
-
-  const currentDate = useMemo(
-    () =>
-      new Date().toLocaleDateString("en-US", {
-        weekday: "short",
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }),
-    []
-  );
+  const [waveTick, setWaveTick] = useState(0);
+  const metrics = useMemo(() => buildMetrics(analysis || {}, transcript), [analysis, transcript]);
 
   useEffect(() => {
-    const user = safeParse(localStorage.getItem("user") || "null");
-    if (!user?._id) return;
-
-    fetch(`http://localhost:5000/api/test-results/${user._id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setHistory(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        setHistory([]);
-      });
+    const interval = setInterval(() => {
+      setWaveTick((prev) => prev + 1);
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (frameRef.current) {
-        cancelAnimationFrame(frameRef.current);
-      }
-    };
-  }, []);
+  const attemptSignature = useMemo(
+    () => `${hashString(`${analysisRaw}|${transcript}`)}`,
+    [analysisRaw, transcript]
+  );
 
-  const trendPoints = useMemo(() => {
-    const fromHistory = history.map((item, index) => ({
-      label: `Test ${index + 1}`,
-      confidence: Number(item.confidence) || 0,
-      pace: Number(item.pace) || 0,
-      clarity: Number(item.clarity ?? item.engagement) || 0,
-    }));
-
-    const currentPoint = {
-      label: `Test ${fromHistory.length + 1}`,
-      confidence: metrics.confidence10,
-      pace: metrics.pace10,
-      clarity: metrics.clarity10,
-    };
-
-    return [...fromHistory, currentPoint].slice(-6);
-  }, [history, metrics.clarity10, metrics.confidence10, metrics.pace10]);
-
-  const prediction = useMemo(() => {
-    const overalls = trendPoints.map(
-      (point) => (point.confidence + point.pace + point.clarity) / 3
-    );
-    const currentOverall = overalls[overalls.length - 1] || 0;
-
-    let slope = 0;
-    if (overalls.length > 1) {
-      let diffSum = 0;
-      for (let i = 1; i < overalls.length; i += 1) {
-        diffSum += overalls[i] - overalls[i - 1];
-      }
-      slope = diffSum / (overalls.length - 1);
+  const communitySamples = useMemo(() => {
+    const cacheKey = `report_community_samples_${attemptSignature}`;
+    const cached = safeParse(localStorage.getItem(cacheKey) || "null");
+    if (Array.isArray(cached) && cached.length === 10) {
+      return cached;
     }
+    const generated = createCommunitySamples(attemptSignature, 10);
+    localStorage.setItem(cacheKey, JSON.stringify(generated));
+    return generated;
+  }, [attemptSignature]);
 
-    const next = clamp(currentOverall + slope, 1, 10);
-    const improvement = Number((next - currentOverall).toFixed(1));
-    return {
-      next,
-      nextRounded: Math.round(next),
-      improvement,
-    };
-  }, [trendPoints]);
+  const questionReviews = useMemo(() => {
+    const raw = Array.isArray(analysis?.question_wise_analysis) ? analysis.question_wise_analysis : [];
+    return raw
+      .map((item, idx) => ({
+        questionId: item?.questionId || `q${idx + 1}`,
+        questionOrder: Number.isFinite(Number(item?.questionOrder)) ? Number(item.questionOrder) : idx,
+        question: String(item?.question || `Question ${idx + 1}`),
+        relevanceScore: clamp(Math.round(Number(item?.relevanceScore) || 0), 0, 100),
+        clarity: clamp(Math.round(Number(item?.clarity) || metrics.clarityPercent), 0, 100),
+        confidenceIndex: clamp(Math.round(Number(item?.confidenceIndex) || metrics.confidencePercent), 0, 100),
+        verdict: String(item?.verdict || "Partial Match"),
+        paceLabel: String(item?.paceLabel || "Normal"),
+        guidance: String(item?.guidance || "Add tighter problem-action-result mapping."),
+        matchedKeywords: Array.isArray(item?.matchedKeywords) ? item.matchedKeywords : [],
+      }))
+      .sort((a, b) => a.questionOrder - b.questionOrder);
+  }, [analysis, metrics.clarityPercent, metrics.confidencePercent]);
 
-  const assistant = useMemo(() => createAssistantFocus(metrics), [metrics]);
+  const answerRelevance = useMemo(() => {
+    if (questionReviews.length) {
+      const avg = questionReviews.reduce((sum, item) => sum + item.relevanceScore, 0) / questionReviews.length;
+      return lenientScore(avg, metrics.hasSpeechSignal, 24);
+    }
+    if (metrics.questionAlignment > 0) return lenientScore(metrics.questionAlignment, metrics.hasSpeechSignal, 24);
+    return lenientScore(transcriptStructureScore(transcript), metrics.hasSpeechSignal, 20);
+  }, [metrics.hasSpeechSignal, metrics.questionAlignment, questionReviews, transcript]);
+
+  const aiGradePercent = useMemo(() => {
+    const weighted =
+      answerRelevance * 0.42 +
+      metrics.clarityPercent * 0.18 +
+      metrics.confidencePercent * 0.14 +
+      metrics.pacePercent * 0.1 +
+      metrics.eyeContact * 0.06 +
+      metrics.postureStability * 0.05 +
+      metrics.vocabularyRange * 0.05;
+    return lenientScore(weighted, metrics.hasSpeechSignal, 28);
+  }, [answerRelevance, metrics]);
+
+  const delivery10 = Number(((metrics.clarityPercent * 0.4 + metrics.pacePercent * 0.3 + metrics.confidencePercent * 0.3) / 10).toFixed(1));
+  const relevance10 = Number((answerRelevance / 10).toFixed(1));
+  const aiGrade10 = Number((aiGradePercent / 10).toFixed(1));
+  const overall10 = Number(((delivery10 + relevance10 + aiGrade10) / 3).toFixed(1));
+
+  const sixSkills = useMemo(() => {
+    const structure = transcriptStructureScore(transcript);
+    return [
+      { label: "Clarity", value: lenientScore(metrics.clarityPercent, metrics.hasSpeechSignal, 20) },
+      { label: "Relevance", value: lenientScore(answerRelevance, metrics.hasSpeechSignal, 24) },
+      { label: "Pace", value: lenientScore(metrics.pacePercent, metrics.hasSpeechSignal, 20) },
+      { label: "Eye Contact", value: lenientScore(metrics.eyeContact, metrics.hasSpeechSignal, 20) },
+      { label: "Posture", value: lenientScore(metrics.postureStability, metrics.hasSpeechSignal, 20) },
+      { label: "Vocabulary", value: lenientScore(metrics.vocabularyRange * 0.74 + structure * 0.26, metrics.hasSpeechSignal, 22) },
+    ];
+  }, [answerRelevance, metrics, transcript]);
+
+  const skillStrengths = useMemo(() => [...sixSkills].sort((a, b) => b.value - a.value).slice(0, 3), [sixSkills]);
+  const skillImprovements = useMemo(() => [...sixSkills].sort((a, b) => a.value - b.value).slice(0, 3), [sixSkills]);
 
   const benchmark = useMemo(() => {
-    const peerTotals = PEER_USER_CASES.reduce(
+    const total = communitySamples.reduce(
       (acc, item) => ({
         confidence: acc.confidence + item.confidence,
         pace: acc.pace + item.pace,
         clarity: acc.clarity + item.clarity,
         eyeContact: acc.eyeContact + item.eyeContact,
         posture: acc.posture + item.posture,
-        vocabulary: acc.vocabulary + item.vocabulary,
+        relevance: acc.relevance + item.relevance,
+        overall: acc.overall + item.overall,
       }),
-      { confidence: 0, pace: 0, clarity: 0, eyeContact: 0, posture: 0, vocabulary: 0 }
+      { confidence: 0, pace: 0, clarity: 0, eyeContact: 0, posture: 0, relevance: 0, overall: 0 }
     );
-
-    const count = PEER_USER_CASES.length || 1;
-    const confidence10 = peerTotals.confidence / count;
-    const pace10 = peerTotals.pace / count;
-    const clarity10 = peerTotals.clarity / count;
-
+    const count = Math.max(1, communitySamples.length);
+    const confidencePercent = Math.round(total.confidence / count);
+    const pacePercent = Math.round(total.pace / count);
+    const clarityPercent = Math.round(total.clarity / count);
     return {
-      confidence10,
-      pace10,
-      clarity10,
-      confidencePercent: Math.round(confidence10 * 10),
-      pacePercent: Math.round(pace10 * 10),
-      clarityPercent: Math.round(clarity10 * 10),
-      overall10: (confidence10 + pace10 + clarity10) / 3,
-      overallPercent: Math.round(((confidence10 + pace10 + clarity10) / 3) * 10),
-      eyeContact: Math.round(peerTotals.eyeContact / count),
-      posture: Math.round(peerTotals.posture / count),
-      vocabulary: Math.round(peerTotals.vocabulary / count),
+      confidencePercent,
+      pacePercent,
+      clarityPercent,
+      relevancePercent: Math.round(total.relevance / count),
+      overallPercent: Math.round(total.overall / count),
+      overall10: Number((total.overall / count / 10).toFixed(1)),
+      eyeContact: Math.round(total.eyeContact / count),
+      posture: Math.round(total.posture / count),
     };
-  }, []);
+  }, [communitySamples]);
 
   const ranking = useMemo(() => {
-    const userOverall10 = (metrics.confidence10 + metrics.pace10 + metrics.clarity10) / 3;
-    const peerOveralls = PEER_USER_CASES.map(
-      (item) => (item.confidence + item.pace + item.clarity) / 3
-    );
-
+    const peerOveralls = communitySamples.map((item) => item.overall / 10);
+    const rank = peerOveralls.filter((score) => score > overall10).length + 1;
     const total = peerOveralls.length + 1;
-    const betterCount = peerOveralls.filter((score) => score > userOverall10).length;
-    const rank = betterCount + 1;
-    const percentile = clamp(Math.round(((total - rank) / (total - 1)) * 100), 0, 100);
+    return { rank, total, percentile: clamp(Math.round(((total - rank) / (total - 1)) * 100), 0, 100) };
+  }, [communitySamples, overall10]);
 
-    const sorted = [...peerOveralls, userOverall10].sort((a, b) => b - a);
-    const rankRows = sorted.map((score, index) => {
-      const isUser = Math.abs(score - userOverall10) < 0.0001 && index === betterCount;
-      return {
-        label: isUser ? "You" : `User ${index + 1}`,
-        score,
-        scorePercent: Math.round(score * 10),
-        isUser,
-      };
-    });
-
-    return {
-      rank,
-      total,
-      percentile,
-      userOverall10,
-      userOverallPercent: Math.round(userOverall10 * 10),
-      rankRows,
-    };
-  }, [metrics.clarity10, metrics.confidence10, metrics.pace10]);
-
-  const comparisonRows = useMemo(
+  const benchmarkRows = useMemo(
     () => [
-      {
-        label: "Confidence",
-        user: metrics.confidencePercent,
-        benchmark: benchmark.confidencePercent,
-      },
-      {
-        label: "Pace",
-        user: metrics.pacePercent,
-        benchmark: benchmark.pacePercent,
-      },
-      {
-        label: "Clarity",
-        user: metrics.clarityPercent,
-        benchmark: benchmark.clarityPercent,
-      },
-      {
-        label: "Overall",
-        user: ranking.userOverallPercent,
-        benchmark: benchmark.overallPercent,
-      },
+      { label: "Answer Relevance", user: answerRelevance, benchmark: benchmark.relevancePercent },
+      { label: "Confidence", user: metrics.confidencePercent, benchmark: benchmark.confidencePercent },
+      { label: "Pace", user: metrics.pacePercent, benchmark: benchmark.pacePercent },
+      { label: "Clarity", user: metrics.clarityPercent, benchmark: benchmark.clarityPercent },
+      { label: "Eye Contact", user: metrics.eyeContact, benchmark: benchmark.eyeContact },
+      { label: "Posture", user: metrics.postureStability, benchmark: benchmark.posture },
+      { label: "Overall", user: aiGradePercent, benchmark: benchmark.overallPercent },
     ],
-    [
-      benchmark.clarityPercent,
-      benchmark.confidencePercent,
-      benchmark.overallPercent,
-      benchmark.pacePercent,
-      metrics.clarityPercent,
-      metrics.confidencePercent,
-      metrics.pacePercent,
-      ranking.userOverallPercent,
-    ]
+    [aiGradePercent, answerRelevance, benchmark, metrics]
   );
 
-  const assistantRecommendations = useMemo(() => {
-    const fromModel = metrics.aiFeedback
-      .filter((item) => typeof item === "string" && item.trim())
-      .map((item) => item.trim());
+  useEffect(() => {
+    const user = safeParse(localStorage.getItem("user") || "null");
+    if (!user?._id) return;
+    fetch(`${API_BASE_URL}/api/test-results/${user._id}`)
+      .then((res) => res.json())
+      .then((data) => setHistory(Array.isArray(data) ? data : []))
+      .catch(() => setHistory([]));
+  }, []);
 
-    const generated = assistant.weakest.map(
-      (item) => `${item.label} (${item.value}%): ${item.suggestion}`
-    );
-
-    return [...fromModel, ...generated].slice(0, 5);
-  }, [assistant.weakest, metrics.aiFeedback]);
-
-  const handlePointerMove = (event) => {
-    if (!shellRef.current) return;
-    const bounds = shellRef.current.getBoundingClientRect();
-    pointerRef.current = {
-      x: event.clientX - bounds.left,
-      y: event.clientY - bounds.top,
-    };
-
-    if (!frameRef.current) {
-      frameRef.current = requestAnimationFrame(() => {
-        frameRef.current = null;
-        if (!shellRef.current) return;
-        shellRef.current.style.setProperty("--rp-liquid-x", `${pointerRef.current.x}px`);
-        shellRef.current.style.setProperty("--rp-liquid-y", `${pointerRef.current.y}px`);
-        shellRef.current.style.setProperty("--rp-liquid-active", "1");
+  const performanceTrend = useMemo(() => {
+    if (questionReviews.length) {
+      const basePoints = questionReviews.map((review) => {
+        const paceShift = review.paceLabel === "Fast" ? -12 : review.paceLabel === "Slow" ? -10 : 4;
+        const pace = clamp(lenientScore(metrics.pacePercent + paceShift, metrics.hasSpeechSignal, 20), 0, 100);
+        const relevance = lenientScore(review.relevanceScore, metrics.hasSpeechSignal, 24);
+        const clarity = lenientScore(review.clarity, metrics.hasSpeechSignal, 20);
+        const confidence = lenientScore(review.confidenceIndex, metrics.hasSpeechSignal, 20);
+        return {
+          label: `Q${review.questionOrder + 1}`,
+          relevance,
+          clarity,
+          confidence,
+          pace,
+          overall: clamp(Math.round(relevance * 0.42 + clarity * 0.22 + confidence * 0.2 + pace * 0.16), 0, 100),
+        };
       });
+      return createWaveTrend(basePoints, waveTick, 8);
     }
-  };
+    const fallback = [
+      {
+        label: "Q1",
+        relevance: answerRelevance,
+        clarity: metrics.clarityPercent,
+        confidence: metrics.confidencePercent,
+        pace: metrics.pacePercent,
+        overall: clamp(Math.round(answerRelevance * 0.42 + metrics.clarityPercent * 0.22 + metrics.confidencePercent * 0.2 + metrics.pacePercent * 0.16), 0, 100),
+      },
+    ];
+    return createWaveTrend(fallback, waveTick, 8);
+  }, [answerRelevance, metrics, questionReviews, waveTick]);
 
-  const handlePointerLeave = () => {
-    if (!shellRef.current) return;
-    shellRef.current.style.setProperty("--rp-liquid-active", "0");
-  };
+  const sessionTrend = useMemo(() => {
+    const historyPoints = history.map((item, idx) => ({
+      label: `Test ${idx + 1}`,
+      overall: clamp(Math.round((((Number(item.confidence) || 0) + (Number(item.pace) || 0) + (Number(item.clarity ?? item.engagement) || 0)) / 3) * 10), 0, 100),
+    }));
+    return [...historyPoints, { label: `Test ${historyPoints.length + 1}`, overall: aiGradePercent }].slice(-8);
+  }, [aiGradePercent, history]);
+
+  const standingTrend = useMemo(
+    () => createCommunityWave(communitySamples, aiGradePercent, waveTick),
+    [aiGradePercent, communitySamples, waveTick]
+  );
+
+  const prediction = useMemo(() => {
+    const values = sessionTrend.map((item) => item.overall / 10);
+    const current = values[values.length - 1] || 0;
+    let slope = 0;
+    if (values.length > 1) {
+      slope =
+        values.slice(1).reduce((sum, value, idx) => sum + (value - values[idx]), 0) /
+        (values.length - 1);
+    }
+    const next = clamp(current + slope, 1, 10);
+    return { nextRounded: Number(next.toFixed(1)), improvement: Number((next - current).toFixed(1)) };
+  }, [sessionTrend]);
+
+  const summaryText = useMemo(() => {
+    if (aiGradePercent >= 82) return "You are delivering clear, relevant answers with strong structure. Keep this consistency and add measurable outcomes in each response.";
+    if (aiGradePercent >= 66) return "You are on a solid track. Better camera focus and tighter examples can raise your score quickly.";
+    return "You are building a strong base. Answer the question directly first, then explain action and result.";
+  }, [aiGradePercent]);
+
+  const adaptiveGuidance = useMemo(() => {
+    const tips = [];
+    if (metrics.wordsPerMinute > 170) tips.push("You are speaking fast. Add a short pause after each key point.");
+    else if (metrics.wordsPerMinute > 0 && metrics.wordsPerMinute < 115) tips.push("You are speaking slow. Use shorter lines and stronger transitions.");
+    else tips.push("Your speaking pace is in a good range. Keep this rhythm.");
+    if (metrics.eyeContact < 70) tips.push("Maintain lens contact while finishing each answer.");
+    if (metrics.postureStability < 70) tips.push("Keep shoulders steady and avoid frequent leaning.");
+    if (metrics.fillerRate > 0.05) tips.push("Replace fillers with a brief pause and continue with one clear point.");
+    if (answerRelevance < 70) tips.push("Align each answer to the question using context, action, and measurable result.");
+    return tips;
+  }, [answerRelevance, metrics]);
+
+  const assistantGuidance = useMemo(() => {
+    const fromModel = metrics.aiFeedback.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
+    const lowMatch = questionReviews.filter((item) => item.relevanceScore < 70).slice(0, 3).map((item) => `Q${item.questionOrder + 1}: ${item.guidance}`);
+    return [...fromModel, ...lowMatch, ...adaptiveGuidance].slice(0, 8);
+  }, [adaptiveGuidance, metrics.aiFeedback, questionReviews]);
 
   const handleSaveTest = async () => {
     const user = safeParse(localStorage.getItem("user") || "null");
-    if (!user?._id) {
-      alert("Please login first");
-      return;
-    }
-
+    if (!user?._id) return alert("Please login first");
     try {
       setSaving(true);
-      const response = await fetch("http://localhost:5000/api/test-results/save", {
+      const response = await fetch(`${API_BASE_URL}/api/test-results/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user._id,
-          confidence: metrics.confidence10,
-          pace: metrics.pace10,
-          clarity: metrics.clarity10,
-        }),
+        body: JSON.stringify({ userId: user._id, confidence: metrics.confidence10, pace: metrics.pace10, clarity: metrics.clarity10 }),
       });
-
-      if (!response.ok) {
-        alert("Failed to save test");
-        return;
-      }
-
+      if (!response.ok) return alert("Failed to save test");
       alert("Test saved successfully");
-    } catch (error) {
-      console.error("Save error:", error);
+    } catch {
       alert("Something went wrong while saving");
     } finally {
       setSaving(false);
@@ -643,23 +778,16 @@ export default function Report() {
 
   const handleDownloadReport = () => {
     const payload = {
-      date: currentDate,
-      scores: {
-        confidence: metrics.confidence10,
-        pace: metrics.pace10,
-        clarity: metrics.clarity10,
-      },
-      radar: metrics.radarSkills,
+      scores: { delivery10, relevance10, aiGrade10, aiGradePercent, answerRelevance, overall10 },
+      metrics,
+      skills: sixSkills,
+      trends: { performanceTrend, sessionTrend, standingTrend },
+      benchmark: { benchmarkRows, ranking, communitySamples },
+      summary: { text: summaryText, strengths: skillStrengths, improvements: skillImprovements, guidance: assistantGuidance },
+      questionBreakdown: questionReviews,
       transcript,
-      feedback: assistantRecommendations,
-      benchmark,
-      ranking,
     };
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
-
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = window.URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -677,85 +805,61 @@ export default function Report() {
   }
 
   return (
-    <div
-      className="rp-shell"
-      ref={shellRef}
-      onMouseMove={handlePointerMove}
-      onMouseLeave={handlePointerLeave}
-    >
+    <div className="rp-shell">
       <main className="rp-main">
         <header className="rp-header">
           <div>
             <h1>Interview Performance Report</h1>
-            <p>{currentDate}</p>
+            <p>{new Date().toLocaleDateString("en-US", { weekday: "short", year: "numeric", month: "short", day: "numeric" })}</p>
           </div>
-          <div className="rp-header-pill">
+          <div className="rp-rank-pill">
             Rank #{ranking.rank}/{ranking.total} users
             <span>{ranking.percentile} percentile</span>
           </div>
         </header>
 
-        <section className="rp-top-grid">
-          <div className="rp-scores-panel">
-            <ScoreDial
-              title="Confidence"
-              value10={metrics.confidence10}
-              percent={metrics.confidencePercent}
-              accent="cyan"
-            />
-            <ScoreDial
-              title="Pace"
-              value10={metrics.pace10}
-              percent={metrics.pacePercent}
-              accent="mint"
-            />
-            <ScoreDial
-              title="Clarity"
-              value10={metrics.clarity10}
-              percent={metrics.clarityPercent}
-              accent="violet"
-            />
-          </div>
-
-          <div className="rp-predict-card">
-            <h3>Predicted Next Score</h3>
-            <div className="rp-predict-value">{prediction.nextRounded}</div>
-            <div className="rp-predict-chip">
-              {prediction.improvement >= 0 ? "+" : ""}
-              {prediction.improvement} improvement
-            </div>
-            <p>Based on your latest trend velocity.</p>
-          </div>
+        <section className="rp-score-row">
+          <ScoreDial title="Delivery" value10={delivery10} percent={delivery10 * 10} accent="cyan" />
+          <ScoreDial title="Relevance" value10={relevance10} percent={answerRelevance} accent="mint" />
+          <ScoreDial title="AI Grade" value10={aiGrade10} percent={aiGradePercent} accent="violet" />
         </section>
 
-        <section className="rp-mid-grid">
-          <div className="rp-trend-card">
-            <h3>Performance Trend</h3>
-            <TrendChart points={trendPoints} />
-          </div>
-
-          <div className="rp-radar-card">
-            <h3>Your Skill Radar</h3>
-            <RadarChart skills={metrics.radarSkills} />
-          </div>
+        <section className="rp-metric-strip">
+          <div className="rp-metric-pill"><span>WPM</span><strong>{metrics.wordsPerMinute || "--"}</strong></div>
+          <div className="rp-metric-pill"><span>Eye Contact</span><strong>{metrics.eyeContact}%</strong></div>
+          <div className="rp-metric-pill"><span>Posture</span><strong>{metrics.postureStability}%</strong></div>
+          <div className="rp-metric-pill"><span>Vocabulary</span><strong>{metrics.vocabularyRange}%</strong></div>
         </section>
 
-        <section className="rp-lower-grid">
-          <div className="rp-compare-card">
-            <h3>User Benchmark Comparison</h3>
-            <p className="rp-card-subtitle">
-              Average from {PEER_USER_CASES.length} users vs your latest session.
-            </p>
+        <section className="rp-highlight-row">
+          <article className="rp-highlight-card">
+            <h3>Answer Relevance</h3>
+            <div className="rp-highlight-value">{answerRelevance}%</div>
+            <p>Based on semantic alignment of each transcript against its question.</p>
+            <div className="rp-highlight-chip">{questionReviews.length} question{questionReviews.length === 1 ? "" : "s"} graded</div>
+          </article>
+          <article className="rp-highlight-card">
+            <h3>AI Grade</h3>
+            <div className="rp-highlight-value">{aiGradePercent}%</div>
+            <p>{scoreBand(aiGradePercent)}. Supportive score from transcript relevance + voice + camera signals.</p>
+            <div className="rp-highlight-chip">{prediction.improvement >= 0 ? "+" : ""}{prediction.improvement} predicted improvement</div>
+            <MomentumChart points={sessionTrend} waveTick={waveTick} />
+          </article>
+        </section>
 
+        <section className="rp-grid-two">
+          <article className="rp-card"><h3>Performance Trend</h3><PerformanceTrendChart points={performanceTrend} waveTick={waveTick} /></article>
+          <article className="rp-card"><h3>Skill Hexagon</h3><SkillRadar skills={sixSkills} waveTick={waveTick} /></article>
+        </section>
+
+        <section className="rp-grid-two">
+          <article className="rp-card"><h3>Your Standing vs Community</h3><StandingChart points={standingTrend} waveTick={waveTick} /></article>
+          <article className="rp-card">
+            <h3>Benchmark Comparison</h3>
             <div className="rp-compare-list">
-              {comparisonRows.map((row) => (
+              {benchmarkRows.map((row) => (
                 <div className="rp-compare-row" key={row.label}>
-                  <div className="rp-compare-head">
-                    <span>{row.label}</span>
-                    <strong>
-                      You {row.user}% | Avg {row.benchmark}%
-                    </strong>
-                  </div>
+                  <div className="rp-compare-head"><span>{row.label}</span><strong>You {row.user}% | Avg {row.benchmark}%</strong></div>
                   <div className="rp-compare-track">
                     <div className="rp-compare-benchmark" style={{ width: `${row.benchmark}%` }} />
                     <div className="rp-compare-user" style={{ width: `${row.user}%` }} />
@@ -763,81 +867,48 @@ export default function Report() {
                 </div>
               ))}
             </div>
+            <p className="rp-rank-note">Compared against 10 fresh community samples. Your current overall is {overall10.toFixed(1)}/10 vs community average {benchmark.overall10.toFixed(1)}/10.</p>
+          </article>
+        </section>
 
-            <div className="rp-rank-progress-wrap">
-              <div className="rp-rank-progress-head">
-                <span>Ranking Position</span>
-                <strong>{ranking.percentile} percentile</strong>
-              </div>
-              <div className="rp-rank-progress-track">
-                <div className="rp-rank-progress-fill" style={{ width: `${ranking.percentile}%` }} />
-                <div
-                  className="rp-rank-progress-pin"
-                  style={{ left: `clamp(10px, ${ranking.percentile}%, calc(100% - 10px))` }}
-                />
-              </div>
-              <p className="rp-rank-summary">
-                Current overall: {ranking.userOverall10.toFixed(1)}/10 vs user average{" "}
-                {benchmark.overall10.toFixed(1)}/10.
-              </p>
+        <section className="rp-grid-two rp-bottom-grid">
+          <article className="rp-card rp-summary-card">
+            <h3>Summary</h3>
+            <div className="rp-summary-rating">Overall Rating: {aiGrade10}/10 ({scoreBand(aiGradePercent)})</div>
+            <p className="rp-summary-text">{summaryText}</p>
+            <div className="rp-summary-columns">
+              <div><h4>Key Strengths</h4><ul>{skillStrengths.map((item) => <li key={item.label}>{item.label} <b>{Math.round(item.value)}%</b></li>)}</ul></div>
+              <div><h4>Improvement Areas</h4><ul>{skillImprovements.map((item) => <li key={item.label}>{item.label} <b>{Math.round(item.value)}%</b></li>)}</ul></div>
             </div>
-
-            <div className="rp-rank-chart">
-              {ranking.rankRows.slice(0, 8).map((entry) => (
-                <div className={`rp-rank-row ${entry.isUser ? "is-user" : ""}`} key={`${entry.label}-${entry.score}`}>
-                  <span>{entry.label}</span>
-                  <div className="rp-rank-row-track">
-                    <div style={{ width: `${entry.scorePercent}%` }} />
+            <ul className="rp-guidance-list">{assistantGuidance.map((tip, index) => <li key={`${tip}-${index}`}>{tip}</li>)}</ul>
+          </article>
+          <article className="rp-card rp-question-card">
+            <h3>Question Relevance Review</h3>
+            {questionReviews.length ? (
+              <div className="rp-question-list">
+                {questionReviews.map((review) => (
+                  <div className="rp-question-row" key={`${review.questionId}-${review.questionOrder}`}>
+                    <div className="rp-question-left">
+                      <strong>Q{review.questionOrder + 1}</strong>
+                      <p>{review.question}</p>
+                      {review.matchedKeywords.length > 0 && <span>Matched: {review.matchedKeywords.slice(0, 5).join(", ")}</span>}
+                    </div>
+                    <div className="rp-question-right">
+                      <div className={`rp-verdict ${review.verdict === "Strong Match" ? "strong" : review.verdict === "Partial Match" ? "partial" : "off"}`}>{review.verdict}</div>
+                      <b>{review.relevanceScore}%</b>
+                    </div>
                   </div>
-                  <strong>{entry.score.toFixed(1)}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <aside className="rp-assistant-card">
-            <h3>AI Assistant</h3>
-            <p className="rp-card-subtitle">
-              Coach score: {assistant.coachScore}% | Prioritized feedback on weak points.
-            </p>
-
-            <div className="rp-focus-chips">
-              {assistant.weakest.map((item) => (
-                <span key={item.key}>
-                  {item.label} {item.value}%
-                </span>
-              ))}
-            </div>
-
-            <ul className="rp-assistant-list">
-              {assistantRecommendations.map((tip, index) => (
-                <li key={`${tip}-${index}`}>{tip}</li>
-              ))}
-            </ul>
-
-            <div className="rp-assistant-strengths">
-              {assistant.strongest.map((item) => (
-                <div key={`strength-${item.key}`}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}%</strong>
-                </div>
-              ))}
-            </div>
-          </aside>
+                ))}
+              </div>
+            ) : (
+              <p className="rp-summary-text">Question-wise transcript reviews appear after at least one question is completed.</p>
+            )}
+          </article>
         </section>
 
         <div className="rp-actions">
-          <button
-            type="button"
-            className="rp-btn rp-save"
-            disabled={saving}
-            onClick={handleSaveTest}
-          >
-            {saving ? "Saving..." : "Save Test Record"}
-          </button>
-          <button type="button" className="rp-btn rp-download" onClick={handleDownloadReport}>
-            Download Report
-          </button>
+          <button type="button" className="rp-btn rp-save" disabled={saving} onClick={handleSaveTest}>{saving ? "Saving..." : "Save Test Record"}</button>
+          <button type="button" className="rp-btn rp-download" onClick={handleDownloadReport}>Download Report</button>
         </div>
       </main>
     </div>

@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/face_mesh": "^0.4.1633559619",
     "@mediapipe/pose": "^0.5.1675469404",
     "@monaco-editor/react": "^4.7.0",
     "@testing-library/dom": "^10.4.1",

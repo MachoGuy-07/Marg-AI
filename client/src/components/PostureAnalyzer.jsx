@@ -1,131 +1,467 @@
-// client/src/components/PostureAnalyzer.jsx
-
 import { useEffect, useRef } from "react";
 import { FaceMesh } from "@mediapipe/face_mesh";
+import { Pose } from "@mediapipe/pose";
+
+const ANALYZE_INTERVAL_MS = 115;
+const EMIT_INTERVAL_MS = 170;
+const ANALYSIS_FRAME_WIDTH = 640;
+const ANALYSIS_FRAME_HEIGHT = 360;
+const FACE_MESH_CDN_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh";
+const POSE_CDN_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/pose";
 
 export default function PostureAnalyzer({ videoRef, onScoreUpdate, onMetrics }) {
+  const faceMeshRef = useRef(null);
+  const poseRef = useRef(null);
+  const rafRef = useRef(null);
+  const busyRef = useRef(false);
+  const lastAnalyzeRef = useRef(0);
 
-  const intervalRef = useRef(null);
-  const meshRef = useRef(null);
+  const latestFaceRef = useRef(null);
+  const latestPoseRef = useRef(null);
+  const analysisCanvasRef = useRef(null);
+  const analysisContextRef = useRef(null);
+  const emitStateRef = useRef({
+    lastTs: 0,
+    eyeContact: 0.5,
+    postureScore: 0.5,
+  });
 
-  const faceFrames = useRef(0);
-  const totalFrames = useRef(0);
-  const headMovement = useRef(0);
-  const lastNose = useRef(null);
+  const totalsRef = useRef({
+    totalFrames: 0,
+    faceFrames: 0,
+    poseFrames: 0,
+  });
+
+  const smoothingRef = useRef({
+    eyeContact: 0.5,
+    postureAlignment: 0.5,
+    headStillness: 0.5,
+    stability: 0.5,
+    postureScore: 0.5,
+    motionEma: 0,
+  });
+
+  const lastFaceCenterRef = useRef(null);
+  const lastShoulderCenterRef = useRef(null);
 
   useEffect(() => {
-
     if (!videoRef?.current) return;
 
-    let isMounted = true;
+    let mounted = true;
 
     const faceMesh = new FaceMesh({
-      locateFile: (file) =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+      locateFile: resolveMediaPipeAsset,
+    });
+    const pose = new Pose({
+      locateFile: resolveMediaPipeAsset,
     });
 
-    meshRef.current = faceMesh;
+    faceMeshRef.current = faceMesh;
+    poseRef.current = pose;
+    analysisCanvasRef.current = document.createElement("canvas");
+    analysisCanvasRef.current.width = ANALYSIS_FRAME_WIDTH;
+    analysisCanvasRef.current.height = ANALYSIS_FRAME_HEIGHT;
+    analysisContextRef.current = analysisCanvasRef.current.getContext("2d");
 
     faceMesh.setOptions({
       maxNumFaces: 1,
       refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6,
+    });
+
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6,
     });
 
     faceMesh.onResults((results) => {
-
-      if (!isMounted) return;
-
-      totalFrames.current++;
-
-      if (!results.multiFaceLandmarks) return;
-
-      faceFrames.current++;
-
-      const landmarks = results.multiFaceLandmarks[0];
-
-      const leftEye = landmarks[33];
-      const rightEye = landmarks[263];
-      const nose = landmarks[1];
-
-      const faceWidth = Math.abs(landmarks[234].x - landmarks[454].x);
-
-      const leftMouth = landmarks[61];
-      const rightMouth = landmarks[291];
-      const mouthWidth = Math.abs(leftMouth.x - rightMouth.x) / faceWidth;
-
-      let emotion = "Neutral";
-      if (mouthWidth > 0.39) emotion = "Smile";
-
-      const eyeCenterX = (leftEye.x + rightEye.x) / 2;
-      const gazeOffset = Math.abs(nose.x - eyeCenterX);
-      const eyeScore = 1 - Math.min(gazeOffset * 3, 1);
-
-      if (lastNose.current) {
-        const dx = nose.x - lastNose.current.x;
-        const dy = nose.y - lastNose.current.y;
-        headMovement.current += Math.sqrt(dx * dx + dy * dy);
-      }
-
-      lastNose.current = nose;
-
-      const engagement = clamp01(faceFrames.current / totalFrames.current);
-      const stability = clamp01(1 - headMovement.current * 5);
-
-      const postureScore = clamp01(
-        eyeScore * 0.4 + engagement * 0.3 + stability * 0.3
-      );
-
-      const metrics = {
-        eyeContact: clamp01(eyeScore),
-        engagement,
-        stability,
-        postureScore,
-        emotion,
-      };
-
-      onScoreUpdate?.(postureScore, emotion, metrics);
-      onMetrics?.(metrics);
+      latestFaceRef.current = results;
     });
 
-    intervalRef.current = setInterval(async () => {
+    pose.onResults((results) => {
+      latestPoseRef.current = results;
+    });
 
-      try {
+    const analyze = async () => {
+      if (!mounted) return;
 
-        if (
-          videoRef.current &&
-          videoRef.current.readyState >= 2 &&
-          meshRef.current
-        ) {
-          await meshRef.current.send({ image: videoRef.current });
+      const video = videoRef.current;
+      if (
+        !video ||
+        video.readyState < 2 ||
+        !faceMeshRef.current ||
+        !poseRef.current
+      ) {
+        rafRef.current = requestAnimationFrame(analyze);
+        return;
+      }
+
+      if (document.hidden) {
+        rafRef.current = requestAnimationFrame(analyze);
+        return;
+      }
+
+      const now = performance.now();
+      if (!busyRef.current && now - lastAnalyzeRef.current >= ANALYZE_INTERVAL_MS) {
+        busyRef.current = true;
+        lastAnalyzeRef.current = now;
+
+        try {
+          let inputImage = video;
+          const canvas = analysisCanvasRef.current;
+          const context = analysisContextRef.current;
+          if (canvas) {
+            if (context) {
+              context.drawImage(video, 0, 0, ANALYSIS_FRAME_WIDTH, ANALYSIS_FRAME_HEIGHT);
+              inputImage = canvas;
+            }
+          }
+
+          // Sequential sends avoid MediaPipe asset-loader races between solutions.
+          await faceMeshRef.current.send({ image: inputImage });
+          await poseRef.current.send({ image: inputImage });
+
+          if (mounted) {
+            const metrics = computeMetrics({
+              faceResults: latestFaceRef.current,
+              poseResults: latestPoseRef.current,
+              totalsRef,
+              smoothingRef,
+              lastFaceCenterRef,
+              lastShoulderCenterRef,
+            });
+
+            const shouldEmit =
+              now - emitStateRef.current.lastTs >= EMIT_INTERVAL_MS ||
+              Math.abs(metrics.eyeContact - emitStateRef.current.eyeContact) >= 0.028 ||
+              Math.abs(metrics.postureScore - emitStateRef.current.postureScore) >= 0.028;
+
+            if (shouldEmit) {
+              emitStateRef.current = {
+                lastTs: now,
+                eyeContact: metrics.eyeContact,
+                postureScore: metrics.postureScore,
+              };
+              onScoreUpdate?.(metrics.postureScore, metrics.emotion, metrics);
+              onMetrics?.(metrics);
+            }
+          }
+        } catch (error) {
+          console.error("Vision analysis error:", error);
+        } finally {
+          busyRef.current = false;
         }
-
-      } catch (err) {
-        console.error("FaceMesh send error:", err);
       }
 
-    }, 120);
-
-    return () => {
-
-      isMounted = false;
-
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-
-      if (meshRef.current) {
-        meshRef.current.close();
-        meshRef.current = null;
-      }
+      rafRef.current = requestAnimationFrame(analyze);
     };
 
-  }, [videoRef, onMetrics, onScoreUpdate]);
+    rafRef.current = requestAnimationFrame(analyze);
+
+    return () => {
+      mounted = false;
+
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
+
+      if (faceMeshRef.current) {
+        faceMeshRef.current.close();
+        faceMeshRef.current = null;
+      }
+
+      if (poseRef.current) {
+        poseRef.current.close();
+        poseRef.current = null;
+      }
+
+      latestFaceRef.current = null;
+      latestPoseRef.current = null;
+      analysisCanvasRef.current = null;
+      analysisContextRef.current = null;
+    };
+  }, [onMetrics, onScoreUpdate, videoRef]);
 
   return null;
 }
 
+function computeMetrics({
+  faceResults,
+  poseResults,
+  totalsRef,
+  smoothingRef,
+  lastFaceCenterRef,
+  lastShoulderCenterRef,
+}) {
+  const faceLandmarks = faceResults?.multiFaceLandmarks?.[0] || null;
+  const poseLandmarks = poseResults?.poseLandmarks || null;
+
+  const totals = totalsRef.current;
+  totals.totalFrames += 1;
+
+  const faceData = faceLandmarks ? extractFaceData(faceLandmarks) : null;
+  if (faceData) totals.faceFrames += 1;
+
+  const poseData = poseLandmarks ? extractPoseData(poseLandmarks) : null;
+  if (poseData) totals.poseFrames += 1;
+
+  const smoothing = smoothingRef.current;
+  const previousFaceCenter = lastFaceCenterRef.current;
+  const previousShoulderCenter = lastShoulderCenterRef.current;
+
+  if (faceData) {
+    smoothing.eyeContact = lerp(smoothing.eyeContact, faceData.eyeContact, 0.28);
+  } else {
+    smoothing.eyeContact = clamp01(smoothing.eyeContact * 0.955);
+    lastFaceCenterRef.current = null;
+  }
+
+  if (poseData) {
+    smoothing.postureAlignment = lerp(
+      smoothing.postureAlignment,
+      poseData.postureAlignment,
+      0.24
+    );
+  } else {
+    smoothing.postureAlignment = clamp01(smoothing.postureAlignment * 0.965);
+    lastShoulderCenterRef.current = null;
+  }
+
+  const movementSamples = [];
+
+  if (faceData && previousFaceCenter) {
+    const faceMotion =
+      distance2D(faceData.nose, previousFaceCenter) /
+      Math.max(faceData.faceWidth, 0.0001);
+    movementSamples.push(faceMotion);
+  }
+
+  if (poseData && previousShoulderCenter) {
+    const torsoMotion =
+      distance2D(poseData.shoulderCenter, previousShoulderCenter) /
+      Math.max(poseData.shoulderWidth, 0.0001);
+    movementSamples.push(torsoMotion);
+  }
+
+  if (faceData) {
+    lastFaceCenterRef.current = { x: faceData.nose.x, y: faceData.nose.y };
+  }
+
+  if (poseData) {
+    lastShoulderCenterRef.current = {
+      x: poseData.shoulderCenter.x,
+      y: poseData.shoulderCenter.y,
+    };
+  }
+
+  const frameMotion = movementSamples.length ? average(movementSamples) : smoothing.motionEma;
+  smoothing.motionEma = lerp(smoothing.motionEma, frameMotion, 0.24);
+
+  const headStillnessRaw = clamp01(1 - smoothing.motionEma * 4.2);
+  smoothing.headStillness = lerp(smoothing.headStillness, headStillnessRaw, 0.3);
+
+  const faceSeen = Boolean(faceData);
+  const poseSeen = Boolean(poseData);
+  const trackingReliability = clamp01((faceSeen ? 0.6 : 0) + (poseSeen ? 0.4 : 0));
+
+  const structuralStability = clamp01(
+    smoothing.headStillness * 0.52 + smoothing.postureAlignment * 0.48
+  );
+  const stabilityRaw = clamp01(
+    structuralStability * trackingReliability + trackingReliability * 0.1
+  );
+  smoothing.stability = lerp(smoothing.stability, stabilityRaw, 0.25);
+
+  const seenFaceRatio = totals.faceFrames / Math.max(1, totals.totalFrames);
+  const seenPoseRatio = totals.poseFrames / Math.max(1, totals.totalFrames);
+  const engagementHistorical = clamp01(seenFaceRatio * 0.6 + seenPoseRatio * 0.4);
+  const engagement = clamp01(trackingReliability * 0.65 + engagementHistorical * 0.35);
+
+  const postureRaw = clamp01(
+    smoothing.eyeContact * 0.36 + smoothing.stability * 0.44 + engagement * 0.2
+  );
+  smoothing.postureScore = lerp(smoothing.postureScore, postureRaw, 0.22);
+
+  return {
+    eyeContact: clamp01(smoothing.eyeContact),
+    engagement,
+    stability: clamp01(smoothing.stability),
+    postureScore: clamp01(smoothing.postureScore),
+    postureAlignment: clamp01(smoothing.postureAlignment),
+    headStillness: clamp01(smoothing.headStillness),
+    shoulderLevel: clamp01(poseData?.shoulderLevel ?? smoothing.postureAlignment),
+    faceVisible: faceSeen,
+    poseVisible: poseSeen,
+    emotion: faceData?.emotion || "Neutral",
+  };
+}
+
+function extractFaceData(landmarks) {
+  const nose = landmarks[1];
+  const leftCheek = landmarks[234];
+  const rightCheek = landmarks[454];
+  const forehead = landmarks[10];
+  const chin = landmarks[152];
+  const leftEyeOuter = landmarks[33];
+  const leftEyeInner = landmarks[133];
+  const rightEyeInner = landmarks[362];
+  const rightEyeOuter = landmarks[263];
+  const leftIris = landmarks[468];
+  const rightIris = landmarks[473];
+  const leftMouth = landmarks[61];
+  const rightMouth = landmarks[291];
+
+  if (
+    !nose ||
+    !leftCheek ||
+    !rightCheek ||
+    !forehead ||
+    !chin ||
+    !leftEyeOuter ||
+    !leftEyeInner ||
+    !rightEyeInner ||
+    !rightEyeOuter
+  ) {
+    return null;
+  }
+
+  const faceWidth = distance2D(leftCheek, rightCheek);
+  const faceHeight = distance2D(forehead, chin);
+  if (faceWidth < 0.0001 || faceHeight < 0.0001) {
+    return null;
+  }
+
+  const eyeMid = {
+    x: (leftEyeOuter.x + rightEyeOuter.x) / 2,
+    y: (leftEyeOuter.y + rightEyeOuter.y) / 2,
+  };
+
+  const leftSide = distance2D(nose, leftCheek);
+  const rightSide = distance2D(nose, rightCheek);
+  const yawSymmetry = clamp01(
+    1 - (Math.abs(leftSide - rightSide) / Math.max(0.0001, leftSide + rightSide)) * 2.2
+  );
+
+  const pitchRatio = (nose.y - eyeMid.y) / faceHeight;
+  const pitchScore = clamp01(1 - Math.abs(pitchRatio - 0.22) / 0.18);
+
+  const centerDistance = Math.hypot(nose.x - 0.5, nose.y - 0.46);
+  const frameCenterScore = clamp01(1 - centerDistance * 2.2);
+
+  const leftGaze = gazeCenterScore(leftEyeOuter, leftEyeInner, leftIris);
+  const rightGaze = gazeCenterScore(rightEyeOuter, rightEyeInner, rightIris);
+  const gazeScore = clamp01((leftGaze + rightGaze) / 2);
+
+  const eyeContact = clamp01(
+    gazeScore * 0.5 +
+      yawSymmetry * 0.3 +
+      pitchScore * 0.12 +
+      frameCenterScore * 0.08
+  );
+
+  const mouthWidth =
+    leftMouth && rightMouth ? distance2D(leftMouth, rightMouth) / faceWidth : 0;
+  const emotion = mouthWidth > 0.39 ? "Smile" : "Neutral";
+
+  return {
+    eyeContact,
+    faceWidth,
+    nose,
+    emotion,
+  };
+}
+
+function extractPoseData(landmarks) {
+  const leftShoulder = landmarks[11];
+  const rightShoulder = landmarks[12];
+  const nose = landmarks[0];
+
+  if (!isVisible(leftShoulder) || !isVisible(rightShoulder) || !isVisible(nose)) {
+    return null;
+  }
+
+  const shoulderWidth = distance2D(leftShoulder, rightShoulder);
+  if (shoulderWidth < 0.0001) {
+    return null;
+  }
+
+  const shoulderCenter = {
+    x: (leftShoulder.x + rightShoulder.x) / 2,
+    y: (leftShoulder.y + rightShoulder.y) / 2,
+  };
+
+  const shoulderTilt = Math.abs(leftShoulder.y - rightShoulder.y) / shoulderWidth;
+  const shoulderLevel = clamp01(1 - shoulderTilt * 4.8);
+
+  const torsoOffset = Math.abs(nose.x - shoulderCenter.x) / shoulderWidth;
+  const torsoAlignment = clamp01(1 - torsoOffset * 2.7);
+
+  const shoulderSpread = clamp01((shoulderWidth - 0.1) / 0.25);
+
+  const postureAlignment = clamp01(
+    shoulderLevel * 0.46 + torsoAlignment * 0.39 + shoulderSpread * 0.15
+  );
+
+  return {
+    shoulderCenter,
+    shoulderWidth,
+    shoulderLevel,
+    postureAlignment,
+  };
+}
+
+function gazeCenterScore(outer, inner, iris) {
+  if (!outer || !inner || !iris) return 0.55;
+  const minX = Math.min(outer.x, inner.x);
+  const maxX = Math.max(outer.x, inner.x);
+  const width = Math.max(0.0001, maxX - minX);
+  const ratio = (iris.x - minX) / width;
+  return clamp01(1 - Math.abs(ratio - 0.5) * 2.2);
+}
+
+function isVisible(landmark, threshold = 0.45) {
+  if (!landmark) return false;
+  if (typeof landmark.visibility !== "number") return true;
+  return landmark.visibility >= threshold;
+}
+
+function average(values) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function distance2D(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function lerp(start, end, alpha) {
+  return start + (end - start) * alpha;
+}
+
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
+}
+
+function resolveMediaPipeAsset(file) {
+  const asset = String(file || "").trim();
+  if (!asset) {
+    return `${FACE_MESH_CDN_BASE}/${asset}`;
+  }
+
+  const isPoseAsset =
+    asset.startsWith("pose_") ||
+    asset.includes("pose_landmark") ||
+    asset.includes("segmentation");
+
+  if (isPoseAsset) {
+    return `${POSE_CDN_BASE}/${asset}`;
+  }
+
+  return `${FACE_MESH_CDN_BASE}/${asset}`;
 }

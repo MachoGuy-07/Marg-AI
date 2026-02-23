@@ -11,6 +11,24 @@
       "name": "viswa",
       "email": "viswa@gmail.com",
       "createdAt": "2025-11-29T02:08:26.465Z"
+    },
+    {
+      "id": "local_1771790279007_gwyzj4",
+      "name": "Rahul Kumar",
+      "email": "rahul.kumar.test@margai.app",
+      "password": "$2b$10$PZ1ZG2JoXoHKNEo4gPvfBel/mHP.T6Q3LVjtNgSvqY7J4YSmyMVUS",
+      "authProvider": "local",
+      "avatar": "",
+      "createdAt": "2026-02-22T19:57:59.007Z"
+    },
+    {
+      "id": "local_1771790587197_ydchyj",
+      "name": "Quick User",
+      "email": "quick.user.test@margai.app",
+      "password": "$2b$10$/8Mua7Ij0TpmzFAe2HRZvelmdCSGDF2gtj8Z.3kDTTaqLrYMyYMw6",
+      "authProvider": "local",
+      "avatar": "",
+      "createdAt": "2026-02-22T20:03:07.197Z"
     }
   ]
 }
