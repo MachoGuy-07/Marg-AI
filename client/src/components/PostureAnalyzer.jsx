@@ -2,19 +2,28 @@ import { useEffect, useRef } from "react";
 import { FaceMesh } from "@mediapipe/face_mesh";
 import { Pose } from "@mediapipe/pose";
 
-const ANALYZE_INTERVAL_MS = 115;
-const EMIT_INTERVAL_MS = 170;
-const ANALYSIS_FRAME_WIDTH = 640;
-const ANALYSIS_FRAME_HEIGHT = 360;
+const BASE_ANALYZE_INTERVAL_MS = 130;
+const MAX_ANALYZE_INTERVAL_MS = 220;
+const EMIT_INTERVAL_MS = 210;
+const FRAME_STRIDE = 2;
+const ANALYSIS_FRAME_WIDTH = 320;
+const ANALYSIS_FRAME_HEIGHT = 240;
 const FACE_MESH_CDN_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh";
 const POSE_CDN_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/pose";
 
 export default function PostureAnalyzer({ videoRef, onScoreUpdate, onMetrics }) {
+  const onScoreUpdateRef = useRef(onScoreUpdate);
+  const onMetricsRef = useRef(onMetrics);
   const faceMeshRef = useRef(null);
   const poseRef = useRef(null);
   const rafRef = useRef(null);
   const busyRef = useRef(false);
   const lastAnalyzeRef = useRef(0);
+  const adaptiveIntervalRef = useRef(BASE_ANALYZE_INTERVAL_MS);
+  const frameStrideRef = useRef(0);
+  const isVisibleRef = useRef(
+    typeof document === "undefined" ? true : !document.hidden
+  );
 
   const latestFaceRef = useRef(null);
   const latestPoseRef = useRef(null);
@@ -45,9 +54,24 @@ export default function PostureAnalyzer({ videoRef, onScoreUpdate, onMetrics }) 
   const lastShoulderCenterRef = useRef(null);
 
   useEffect(() => {
+    onScoreUpdateRef.current = onScoreUpdate;
+  }, [onScoreUpdate]);
+
+  useEffect(() => {
+    onMetricsRef.current = onMetrics;
+  }, [onMetrics]);
+
+  useEffect(() => {
     if (!videoRef?.current) return;
 
     let mounted = true;
+    const handleVisibilityChange = () => {
+      isVisibleRef.current =
+        typeof document === "undefined" ? true : !document.hidden;
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
 
     const faceMesh = new FaceMesh({
       locateFile: resolveMediaPipeAsset,
@@ -65,17 +89,17 @@ export default function PostureAnalyzer({ videoRef, onScoreUpdate, onMetrics }) 
 
     faceMesh.setOptions({
       maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6,
+      refineLandmarks: false,
+      minDetectionConfidence: 0.55,
+      minTrackingConfidence: 0.55,
     });
 
     pose.setOptions({
-      modelComplexity: 1,
+      modelComplexity: 0,
       smoothLandmarks: true,
       enableSegmentation: false,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6,
+      minDetectionConfidence: 0.55,
+      minTrackingConfidence: 0.55,
     });
 
     faceMesh.onResults((results) => {
@@ -100,15 +124,25 @@ export default function PostureAnalyzer({ videoRef, onScoreUpdate, onMetrics }) 
         return;
       }
 
-      if (document.hidden) {
+      if (!isVisibleRef.current) {
+        rafRef.current = requestAnimationFrame(analyze);
+        return;
+      }
+
+      frameStrideRef.current = (frameStrideRef.current + 1) % FRAME_STRIDE;
+      if (frameStrideRef.current !== 0) {
         rafRef.current = requestAnimationFrame(analyze);
         return;
       }
 
       const now = performance.now();
-      if (!busyRef.current && now - lastAnalyzeRef.current >= ANALYZE_INTERVAL_MS) {
+      if (
+        !busyRef.current &&
+        now - lastAnalyzeRef.current >= adaptiveIntervalRef.current
+      ) {
         busyRef.current = true;
         lastAnalyzeRef.current = now;
+        const startedAt = performance.now();
 
         try {
           let inputImage = video;
@@ -116,14 +150,21 @@ export default function PostureAnalyzer({ videoRef, onScoreUpdate, onMetrics }) 
           const context = analysisContextRef.current;
           if (canvas) {
             if (context) {
-              context.drawImage(video, 0, 0, ANALYSIS_FRAME_WIDTH, ANALYSIS_FRAME_HEIGHT);
+              context.imageSmoothingEnabled = false;
+              context.drawImage(
+                video,
+                0,
+                0,
+                ANALYSIS_FRAME_WIDTH,
+                ANALYSIS_FRAME_HEIGHT
+              );
               inputImage = canvas;
             }
           }
 
-          // Sequential sends avoid MediaPipe asset-loader races between solutions.
-          await faceMeshRef.current.send({ image: inputImage });
-          await poseRef.current.send({ image: inputImage });
+          const faceTask = faceMeshRef.current.send({ image: inputImage });
+          const poseTask = poseRef.current.send({ image: inputImage });
+          await Promise.allSettled([faceTask, poseTask]);
 
           if (mounted) {
             const metrics = computeMetrics({
@@ -146,13 +187,29 @@ export default function PostureAnalyzer({ videoRef, onScoreUpdate, onMetrics }) 
                 eyeContact: metrics.eyeContact,
                 postureScore: metrics.postureScore,
               };
-              onScoreUpdate?.(metrics.postureScore, metrics.emotion, metrics);
-              onMetrics?.(metrics);
+              onScoreUpdateRef.current?.(
+                metrics.postureScore,
+                metrics.emotion,
+                metrics
+              );
+              onMetricsRef.current?.(metrics);
             }
           }
-        } catch (error) {
-          console.error("Vision analysis error:", error);
+        } catch {
+          // Ignore transient inference errors to keep video rendering stable.
         } finally {
+          const runMs = performance.now() - startedAt;
+          if (runMs > 95) {
+            adaptiveIntervalRef.current = Math.min(
+              MAX_ANALYZE_INTERVAL_MS,
+              adaptiveIntervalRef.current + 12
+            );
+          } else if (runMs < 62) {
+            adaptiveIntervalRef.current = Math.max(
+              BASE_ANALYZE_INTERVAL_MS,
+              adaptiveIntervalRef.current - 5
+            );
+          }
           busyRef.current = false;
         }
       }
@@ -183,8 +240,14 @@ export default function PostureAnalyzer({ videoRef, onScoreUpdate, onMetrics }) 
       latestPoseRef.current = null;
       analysisCanvasRef.current = null;
       analysisContextRef.current = null;
+      adaptiveIntervalRef.current = BASE_ANALYZE_INTERVAL_MS;
+      frameStrideRef.current = 0;
+
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
     };
-  }, [onMetrics, onScoreUpdate, videoRef]);
+  }, [videoRef]);
 
   return null;
 }

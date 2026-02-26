@@ -9,6 +9,7 @@ import QuestionList from "./pages/QuestionList";
 import Report from "./pages/Report";
 import TopicPractice from "./pages/TopicPractice";
 import Login from "./pages/Login";
+import Profile from "./pages/Profile";
 import "./styles/home.css";
 
 function AppLayout() {
@@ -49,6 +50,8 @@ function AppLayout() {
       <Route path="/practice/:topic" element={<TopicPractice />} />
       <Route path="/mock-interview" element={<MockInterview />} />
       <Route path="/report" element={<Report />} />
+      <Route path="/profile" element={<Profile />} />
+      <Route path="/dashboard" element={<Profile />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Login defaultMode="signup" />} />
     </Routes>

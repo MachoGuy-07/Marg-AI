@@ -35,6 +35,38 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    headline: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    targetRole: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    timezone: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    bio: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
+    lastLogoutAt: {
+      type: Date,
+      default: null,
+    },
+    loginHistory: {
+      type: [Date],
+      default: [],
+    },
   },
   { timestamps: true }
 );

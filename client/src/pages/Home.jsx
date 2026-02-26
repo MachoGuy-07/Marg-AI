@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/home.css";
 
@@ -7,6 +7,22 @@ export default function Home() {
   const [slideDirection, setSlideDirection] = useState(null);
   const videoRef = useRef(null);
   const starBgUrl = `${process.env.PUBLIC_URL || ""}/space-bg.png`;
+  const user = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  }, []);
+  const profileInitials = useMemo(() => {
+    const name = String(user?.name || "User").trim();
+    if (!name) return "U";
+    return name
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("");
+  }, [user]);
 
   /* =====================================
      ROUTE TRANSITION
@@ -72,6 +88,24 @@ export default function Home() {
               <div className="brand-name">Marg AI</div>
               <div className="brand-sub">AI Interview Coach</div>
             </div>
+          </div>
+          <div className="topbar-actions">
+            <button
+              type="button"
+              className="topbar-dashboard-btn"
+              onClick={() => triggerTransition("/profile")}
+            >
+              Dashboard
+            </button>
+            <button
+              type="button"
+              className="topbar-profile-btn"
+              onClick={() => triggerTransition("/profile")}
+              aria-label="Open profile dashboard"
+              title={String(user?.name || "Open profile")}
+            >
+              <span>{profileInitials}</span>
+            </button>
           </div>
         </header>
 

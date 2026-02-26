@@ -10,7 +10,14 @@
       "id": "u_1764382106465",
       "name": "viswa",
       "email": "viswa@gmail.com",
-      "createdAt": "2025-11-29T02:08:26.465Z"
+      "createdAt": "2025-11-29T02:08:26.465Z",
+      "authProvider": "local",
+      "headline": "Cybersecurity Learner",
+      "targetRole": "Security Analyst",
+      "timezone": "Asia/Kolkata",
+      "bio": "Auto-seeded dashboard profile with historical mock interview progression.",
+      "password": "$2b$10$o0qjZHEbtK0EGKLrvaUWd.TZDbjWKxdesPs7c03l/OFfwdrmb1Wk.",
+      "updatedAt": "2026-02-24T08:44:22.507Z"
     },
     {
       "id": "local_1771790279007_gwyzj4",
@@ -29,6 +36,30 @@
       "authProvider": "local",
       "avatar": "",
       "createdAt": "2026-02-22T20:03:07.197Z"
+    },
+    {
+      "id": "local_1771922655965_vojkgl",
+      "name": "viswanath",
+      "email": "viswa2006@gmail.com",
+      "password": "$2b$10$A/K75HygWx1.nDtoOdsx8eOQMRhUH8sIEN5rJYNX0TOok0jVzZ106",
+      "authProvider": "local",
+      "avatar": "",
+      "headline": "",
+      "targetRole": "",
+      "timezone": "",
+      "bio": "",
+      "createdAt": "2026-02-24T08:44:15.804Z",
+      "updatedAt": "2026-02-24T09:43:11.793Z",
+      "lastLoginAt": "2026-02-24T09:43:11.793Z",
+      "lastLogoutAt": "2026-02-24T08:45:43.562Z",
+      "loginHistory": [
+        "2026-02-24T08:44:15.804Z",
+        "2026-02-24T08:44:43.218Z",
+        "2026-02-24T08:45:06.940Z",
+        "2026-02-24T08:45:32.753Z",
+        "2026-02-24T08:46:36.762Z",
+        "2026-02-24T09:43:11.793Z"
+      ]
     }
   ]
 }

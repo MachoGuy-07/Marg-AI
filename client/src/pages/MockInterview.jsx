@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import VideoRecorder from "../components/VideoRecorder";
 import "../styles/mockInterview.css";
@@ -26,7 +26,9 @@ const QUESTIONS = [
   { id: "q20", text: "Why should we hire you over other strong candidates for this position?", timeLimit: 60 },
 ];
 
-const TRANSCRIPT_UI_THROTTLE_MS = 120;
+const TRANSCRIPT_UI_THROTTLE_MS = 42;
+const TRANSCRIPT_FORCE_FLUSH_MS = 110;
+const RECOGNITION_RESTART_DELAY_MS = 180;
 
 const FILLER_WORDS = [
   "um",
@@ -117,6 +119,12 @@ function tokenize(text) {
   return (text.toLowerCase().match(/\b[a-z']+\b/g) || []).map((word) =>
     word.replace(/'/g, "")
   );
+}
+
+function normalizeTranscriptText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function paceBand(wpm) {
@@ -351,12 +359,38 @@ export default function MockInterview() {
   const questionAnalysesRef = useRef([]);
 
   const recognitionRef = useRef(null);
+  const recognitionActiveRef = useRef(false);
+  const recognitionRestartTimerRef = useRef(null);
   const transcriptRef = useRef("");
+  const interimTranscriptRef = useRef("");
   const transcriptPreviewRef = useRef("");
+  const transcriptFlushRafRef = useRef(null);
+  const transcriptFlushTimerRef = useRef(null);
   const lastTranscriptPaintAtRef = useRef(0);
+  const transcriptBoxRef = useRef(null);
   const startTimeRef = useRef(null);
   const timerRef = useRef(null);
   const isRecordingRef = useRef(false);
+  const currentQuestionIndexRef = useRef(0);
+  const liveMetricsRef = useRef({
+    transcript: "",
+    wpm: 0,
+    fillerCount: 0,
+    vocabularyDiversity: 0,
+    pauseCount: 0,
+    pauseRatio: 1,
+    voiceStability: 0,
+    tone: "Neutral",
+    liveConfidence: 0,
+    liveVoiceScore: 0,
+    eyeContactPct: 0,
+    posturePct: 0,
+    speakingClarity: 0,
+    confidenceIndex: 0,
+    fillerRate: 0,
+  });
+  const lastVoiceMetricsPaintRef = useRef(0);
+  const lastPostureMetricsPaintRef = useRef(0);
 
   const [index, setIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(QUESTIONS[0].timeLimit);
@@ -522,6 +556,124 @@ export default function MockInterview() {
   }, [isRecording]);
 
   useEffect(() => {
+    currentQuestionIndexRef.current = index;
+  }, [index]);
+
+  useEffect(() => {
+    liveMetricsRef.current = {
+      transcript,
+      wpm,
+      fillerCount,
+      vocabularyDiversity,
+      pauseCount,
+      pauseRatio,
+      voiceStability,
+      tone,
+      liveConfidence,
+      liveVoiceScore,
+      eyeContactPct,
+      posturePct,
+      speakingClarity,
+      confidenceIndex,
+      fillerRate,
+    };
+  }, [
+    confidenceIndex,
+    eyeContactPct,
+    fillerCount,
+    fillerRate,
+    liveConfidence,
+    liveVoiceScore,
+    pauseCount,
+    pauseRatio,
+    posturePct,
+    speakingClarity,
+    tone,
+    transcript,
+    vocabularyDiversity,
+    voiceStability,
+    wpm,
+  ]);
+
+  const clearTranscriptFlushers = useCallback(() => {
+    if (transcriptFlushRafRef.current) {
+      cancelAnimationFrame(transcriptFlushRafRef.current);
+      transcriptFlushRafRef.current = null;
+    }
+    if (transcriptFlushTimerRef.current) {
+      clearTimeout(transcriptFlushTimerRef.current);
+      transcriptFlushTimerRef.current = null;
+    }
+  }, []);
+
+  const flushTranscriptToUi = useCallback(
+    (force = false) => {
+      const combinedTranscript = normalizeTranscriptText(
+        `${transcriptRef.current} ${interimTranscriptRef.current}`
+      );
+
+      if (!combinedTranscript && !force) return false;
+      if (!force && combinedTranscript === transcriptPreviewRef.current) return false;
+
+      const now = performance.now();
+      if (!force && now - lastTranscriptPaintAtRef.current < TRANSCRIPT_UI_THROTTLE_MS) {
+        return false;
+      }
+
+      lastTranscriptPaintAtRef.current = now;
+      transcriptPreviewRef.current = combinedTranscript;
+      setTranscript(combinedTranscript);
+      return true;
+    },
+    []
+  );
+
+  const scheduleTranscriptPaint = useCallback(
+    (force = false) => {
+      if (force) {
+        clearTranscriptFlushers();
+        flushTranscriptToUi(true);
+        return;
+      }
+
+      const paintedNow = flushTranscriptToUi(false);
+      if (paintedNow) return;
+
+      if (!transcriptFlushRafRef.current) {
+        transcriptFlushRafRef.current = requestAnimationFrame(() => {
+          transcriptFlushRafRef.current = null;
+          flushTranscriptToUi(true);
+        });
+      }
+
+      if (!transcriptFlushTimerRef.current) {
+        transcriptFlushTimerRef.current = setTimeout(() => {
+          transcriptFlushTimerRef.current = null;
+          flushTranscriptToUi(true);
+        }, TRANSCRIPT_FORCE_FLUSH_MS);
+      }
+    },
+    [clearTranscriptFlushers, flushTranscriptToUi]
+  );
+
+  const scheduleRecognitionRestart = useCallback((delayMs = RECOGNITION_RESTART_DELAY_MS) => {
+    if (!isRecordingRef.current) return;
+    if (recognitionRestartTimerRef.current) {
+      clearTimeout(recognitionRestartTimerRef.current);
+    }
+
+    recognitionRestartTimerRef.current = setTimeout(() => {
+      recognitionRestartTimerRef.current = null;
+      if (!isRecordingRef.current || recognitionActiveRef.current) return;
+      try {
+        recognitionRef.current?.start();
+      } catch {
+        // Retry on next onend cycle.
+      }
+    }, delayMs);
+  }, []);
+
+  useEffect(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -533,58 +685,92 @@ export default function MockInterview() {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      recognitionActiveRef.current = true;
+    };
 
     recognition.onresult = (event) => {
-      let interim = "";
+      let interimText = "";
       let finalText = transcriptRef.current;
       let hasFinalChunk = false;
 
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const chunk = event.results[i][0].transcript;
+        const chunk = normalizeTranscriptText(event.results[i][0]?.transcript);
+        if (!chunk) continue;
+
         if (event.results[i].isFinal) {
           hasFinalChunk = true;
-          finalText += `${chunk} `;
+          finalText = `${finalText} ${chunk}`;
         }
-        else interim += chunk;
+        else {
+          interimText = `${interimText} ${chunk}`;
+        }
       }
 
-      transcriptRef.current = finalText;
-      const combinedTranscript = `${finalText}${interim}`.trim();
-      const now = Date.now();
-      const shouldPaint =
-        hasFinalChunk ||
-        now - lastTranscriptPaintAtRef.current >= TRANSCRIPT_UI_THROTTLE_MS;
+      transcriptRef.current = normalizeTranscriptText(finalText);
+      interimTranscriptRef.current = normalizeTranscriptText(interimText);
+      scheduleTranscriptPaint(hasFinalChunk);
+    };
 
-      if (shouldPaint && combinedTranscript !== transcriptPreviewRef.current) {
-        lastTranscriptPaintAtRef.current = now;
-        transcriptPreviewRef.current = combinedTranscript;
-        setTranscript(combinedTranscript);
+    recognition.onerror = (event) => {
+      const code = String(event?.error || "").toLowerCase();
+      recognitionActiveRef.current = false;
+
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        setSpeechSupported(false);
+        return;
       }
+
+      if (!isRecordingRef.current) return;
+      if (code === "network") {
+        scheduleRecognitionRestart(420);
+        return;
+      }
+      scheduleRecognitionRestart();
     };
 
     recognition.onend = () => {
+      recognitionActiveRef.current = false;
       if (!isRecordingRef.current) return;
-      try {
-        recognition.start();
-      } catch (err) {
-        // no-op
-      }
+      scheduleRecognitionRestart();
     };
 
     recognitionRef.current = recognition;
     return () => {
+      recognitionActiveRef.current = false;
+      clearTranscriptFlushers();
+      if (recognitionRestartTimerRef.current) {
+        clearTimeout(recognitionRestartTimerRef.current);
+        recognitionRestartTimerRef.current = null;
+      }
       try {
         recognition.stop();
-      } catch (err) {
+      } catch {
         // no-op
       }
       recognitionRef.current = null;
     };
-  }, []);
+  }, [clearTranscriptFlushers, scheduleRecognitionRestart, scheduleTranscriptPaint]);
 
   useEffect(() => {
     return () => clearInterval(timerRef.current);
   }, []);
+
+  useEffect(() => {
+    const box = transcriptBoxRef.current;
+    if (!box) return;
+
+    const remaining = box.scrollHeight - box.scrollTop - box.clientHeight;
+    const isNearBottom = remaining <= 56;
+    if (!isNearBottom) return;
+
+    box.scrollTo({
+      top: box.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [transcriptPreview]);
 
   useEffect(() => {
     const words = tokenize(transcript);
@@ -605,7 +791,7 @@ export default function MockInterview() {
     setVocabularyDiversity(Math.round((unique / total) * 100));
   }, [transcript]);
 
-  const upsertQuestionReview = (review) => {
+  const upsertQuestionReview = useCallback((review) => {
     const next = [
       ...questionAnalysesRef.current.filter((item) => item.questionId !== review.questionId),
       review,
@@ -613,33 +799,43 @@ export default function MockInterview() {
     questionAnalysesRef.current = next;
     setQuestionAnalyses(next);
     setLastQuestionReview(review);
-  };
+  }, []);
 
-  const finalizeCurrentQuestionReview = () => {
-    const question = QUESTIONS[index];
+  const finalizeCurrentQuestionReview = useCallback(() => {
+    const questionOrder = currentQuestionIndexRef.current;
+    const question = QUESTIONS[questionOrder];
     if (!question) return null;
 
+    const snapshot = liveMetricsRef.current;
     const answerFromRef = String(transcriptRef.current || "").trim();
-    const answerFromUi = String(transcript || "").trim();
+    const answerFromUi = String(snapshot.transcript || "").trim();
     const answer = answerFromUi.length > answerFromRef.length ? answerFromUi : answerFromRef || answerFromUi;
+    const paceSnapshot = paceBand(snapshot.wpm);
 
     const review = evaluateQuestionResponse({
       question: question.text,
       answer,
-      questionOrder: index,
-      wpm,
-      paceLabel: pace.label,
-      clarity: speakingClarity,
-      confidenceIndex,
-      fillerRate,
+      questionOrder,
+      wpm: snapshot.wpm,
+      paceLabel: paceSnapshot.label,
+      clarity: snapshot.speakingClarity,
+      confidenceIndex: snapshot.confidenceIndex,
+      fillerRate: snapshot.fillerRate,
     });
 
     upsertQuestionReview(review);
     return review;
-  };
+  }, [upsertQuestionReview]);
 
-  const handleRecordingStart = () => {
+  const handleRecordingStart = useCallback(() => {
+    clearTranscriptFlushers();
+    if (recognitionRestartTimerRef.current) {
+      clearTimeout(recognitionRestartTimerRef.current);
+      recognitionRestartTimerRef.current = null;
+    }
+
     transcriptRef.current = "";
+    interimTranscriptRef.current = "";
     transcriptPreviewRef.current = "";
     lastTranscriptPaintAtRef.current = 0;
     setTranscript("");
@@ -654,6 +850,8 @@ export default function MockInterview() {
     setPosturePct(0);
     setLiveVoiceScore(0);
     setLiveConfidence(0);
+    lastVoiceMetricsPaintRef.current = 0;
+    lastPostureMetricsPaintRef.current = 0;
     questionAnalysesRef.current = [];
     setQuestionAnalyses([]);
     setLastQuestionReview(null);
@@ -663,26 +861,39 @@ export default function MockInterview() {
     isRecordingRef.current = true;
 
     try {
-      recognitionRef.current?.start();
-    } catch (err) {
+      if (!recognitionActiveRef.current) {
+        recognitionRef.current?.start();
+      }
+    } catch {
       // no-op
     }
-  };
+  }, [clearTranscriptFlushers]);
 
-  const handleRecordingStop = () => {
+  const handleRecordingStop = useCallback(() => {
+    clearTranscriptFlushers();
+    if (recognitionRestartTimerRef.current) {
+      clearTimeout(recognitionRestartTimerRef.current);
+      recognitionRestartTimerRef.current = null;
+    }
+
     setIsRecording(false);
     isRecordingRef.current = false;
-    const finalTranscript = String(transcriptRef.current || "").trim();
-    if (finalTranscript && finalTranscript !== transcriptPreviewRef.current) {
+    const finalTranscript = normalizeTranscriptText(
+      `${transcriptRef.current} ${interimTranscriptRef.current}`
+    );
+    transcriptRef.current = finalTranscript;
+    interimTranscriptRef.current = "";
+    if (finalTranscript !== transcriptPreviewRef.current) {
       transcriptPreviewRef.current = finalTranscript;
       setTranscript(finalTranscript);
     }
     try {
       recognitionRef.current?.stop();
-    } catch (err) {
+    } catch {
       // no-op
     }
-  };
+    recognitionActiveRef.current = false;
+  }, [clearTranscriptFlushers]);
 
   const startTimer = () => {
     clearInterval(timerRef.current);
@@ -716,7 +927,9 @@ export default function MockInterview() {
     }
     setIndex(index + 1);
     setTimeLeft(QUESTIONS[index + 1].timeLimit);
+    clearTranscriptFlushers();
     transcriptRef.current = "";
+    interimTranscriptRef.current = "";
     transcriptPreviewRef.current = "";
     lastTranscriptPaintAtRef.current = 0;
     setTranscript("");
@@ -728,12 +941,13 @@ export default function MockInterview() {
     setVoiceStability(0);
   };
 
-  const handleUploadComplete = (data) => {
+  const handleUploadComplete = useCallback((data) => {
     handleRecordingStop();
     finalizeCurrentQuestionReview();
 
+    const snapshot = liveMetricsRef.current;
     const transcriptFromRef = String(transcriptRef.current || "").trim();
-    const transcriptFromUi = String(transcript || "").trim();
+    const transcriptFromUi = String(snapshot.transcript || "").trim();
     const finalTranscript =
       transcriptFromUi.length > transcriptFromRef.length
         ? transcriptFromUi
@@ -744,44 +958,48 @@ export default function MockInterview() {
     const elapsedMinutes = startTimeRef.current
       ? Math.max((Date.now() - startTimeRef.current) / 60000, 0.08)
       : 1;
-    const computedWpm = wpm > 0
-      ? wpm
+    const computedWpm = snapshot.wpm > 0
+      ? snapshot.wpm
       : (transcriptWordCount ? Math.round(transcriptWordCount / elapsedMinutes) : 0);
-    const computedFillerCount = fillerCount > 0
-      ? fillerCount
+    const computedFillerCount = snapshot.fillerCount > 0
+      ? snapshot.fillerCount
       : transcriptWords.filter((word) => FILLER_WORDS.includes(word)).length;
     const computedFillerRate = transcriptWordCount
       ? computedFillerCount / transcriptWordCount
       : 0;
-    const computedVocabularyDiversity = vocabularyDiversity > 0
-      ? vocabularyDiversity
+    const computedVocabularyDiversity = snapshot.vocabularyDiversity > 0
+      ? snapshot.vocabularyDiversity
       : (transcriptWordCount ? Math.round((new Set(transcriptWords).size / transcriptWordCount) * 100) : 0);
     const computedPace = paceBand(computedWpm);
     const sentenceCount = Math.max(1, (finalTranscript.match(/[.!?]+/g) || []).length);
-    const computedPauseCount = pauseCount > 0 ? pauseCount : Math.max(0, sentenceCount - 1);
+    const computedPauseCount = snapshot.pauseCount > 0
+      ? snapshot.pauseCount
+      : Math.max(0, sentenceCount - 1);
     const computedClarity =
-      speakingClarity > 0
-        ? speakingClarity
+      snapshot.speakingClarity > 0
+        ? snapshot.speakingClarity
         : clamp(
             Math.round(
-              liveVoiceScore * 40 +
+              snapshot.liveVoiceScore * 40 +
               (computedPace.percent / 100) * 20 +
               (1 - clamp(computedFillerRate * 6, 0, 1)) * 16 +
               (computedVocabularyDiversity / 100) * 14 +
-              liveConfidence * 10
+              snapshot.liveConfidence * 10
             ),
             0,
             100
           );
     const computedPauseRatio = Number(
       clamp(
-        pauseRatio > 0 ? pauseRatio : (transcriptWordCount ? computedPauseCount / Math.max(1, transcriptWordCount / 8) : 1),
+        snapshot.pauseRatio > 0
+          ? snapshot.pauseRatio
+          : (transcriptWordCount ? computedPauseCount / Math.max(1, transcriptWordCount / 8) : 1),
         0,
         1
       ).toFixed(3)
     );
 
-    const confidenceScore = clamp(Math.round((confidenceIndex + 12) / 10), 3, 10);
+    const confidenceScore = clamp(Math.round((snapshot.confidenceIndex + 12) / 10), 3, 10);
     const clarityScore = clamp(Math.round((computedClarity + 10) / 10), 3, 10);
 
     const aiFeedback = buildAIFeedback({
@@ -792,9 +1010,9 @@ export default function MockInterview() {
       pauseCount: computedPauseCount,
       clarity: computedClarity,
       vocabularyDiversity: computedVocabularyDiversity,
-      eyeContact: eyeContactPct,
-      posture: posturePct,
-      tone,
+      eyeContact: snapshot.eyeContactPct,
+      posture: snapshot.posturePct,
+      tone: snapshot.tone,
       transcriptWordCount,
     });
 
@@ -810,11 +1028,11 @@ export default function MockInterview() {
       pause_ratio: computedPauseRatio,
       vocabulary_diversity: computedVocabularyDiversity,
       speaking_clarity: computedClarity,
-      voice_stability: Math.round(voiceStability * 100),
-      eye_contact: eyeContactPct,
-      posture_stability: posturePct,
-      tone,
-      confidence_index: confidenceIndex,
+      voice_stability: Math.round(snapshot.voiceStability * 100),
+      eye_contact: snapshot.eyeContactPct,
+      posture_stability: snapshot.posturePct,
+      tone: snapshot.tone,
+      confidence_index: snapshot.confidenceIndex,
       ai_feedback: aiFeedback,
       question_wise_analysis: questionAnalysesRef.current,
       question_alignment_avg: questionAnalysesRef.current.length
@@ -834,7 +1052,79 @@ export default function MockInterview() {
     );
 
     navigate("/report");
-  };
+  }, [finalizeCurrentQuestionReview, handleRecordingStop, navigate]);
+
+  const handlePostureScore = useCallback((score) => {
+    const safe = clamp(Number(score) || 0, 0, 1);
+    setLiveConfidence((prev) => {
+      const next = Number((prev + (safe - prev) * 0.32).toFixed(4));
+      return Math.abs(next - prev) >= 0.01 ? next : prev;
+    });
+  }, []);
+
+  const handleVoiceScore = useCallback((score) => {
+    const safe = clamp(Number(score) || 0, 0, 1);
+    setLiveVoiceScore((prev) => {
+      const next = Number((prev + (safe - prev) * 0.34).toFixed(4));
+      return Math.abs(next - prev) >= 0.01 ? next : prev;
+    });
+  }, []);
+
+  const handleVoiceMetrics = useCallback((metrics) => {
+    const now = performance.now();
+    if (now - lastVoiceMetricsPaintRef.current < 120) return;
+    lastVoiceMetricsPaintRef.current = now;
+
+    const incomingPauseCount = Math.max(0, Number(metrics?.pauseCount) || 0);
+    const incomingPauseRatio = clamp(Number(metrics?.pauseRatio ?? 1), 0, 1);
+    const incomingStability = clamp(Number(metrics?.stability ?? 0), 0, 1);
+    const incomingTone = metrics?.tone || "Neutral";
+
+    setPauseCount((prev) =>
+      Math.abs(incomingPauseCount - prev) >= 1 ? incomingPauseCount : prev
+    );
+    setPauseRatio((prev) =>
+      Math.abs(incomingPauseRatio - prev) >= 0.01 ? incomingPauseRatio : prev
+    );
+    setVoiceStability((prev) =>
+      Math.abs(incomingStability - prev) >= 0.01 ? incomingStability : prev
+    );
+    setTone((prev) => (prev !== incomingTone ? incomingTone : prev));
+  }, []);
+
+  const handlePostureMetrics = useCallback((metrics) => {
+    const now = performance.now();
+    if (now - lastPostureMetricsPaintRef.current < 120) return;
+    lastPostureMetricsPaintRef.current = now;
+
+    const eye = clamp(Math.round((metrics?.eyeContact || 0) * 100), 0, 100);
+    const stability = clamp(Number(metrics?.stability ?? 0), 0, 1);
+    const alignment = clamp(
+      Number(metrics?.postureAlignment ?? metrics?.stability ?? 0),
+      0,
+      1
+    );
+    const stillness = clamp(
+      Number(metrics?.headStillness ?? metrics?.stability ?? 0),
+      0,
+      1
+    );
+    const postureBlend = clamp(
+      stability * 0.3 + alignment * 0.36 + stillness * 0.34,
+      0,
+      1
+    );
+    const posture = clamp(Math.round(postureBlend * 100), 0, 100);
+
+    setEyeContactPct((prev) => {
+      const next = Math.round(prev + (eye - prev) * 0.36);
+      return Math.abs(next - prev) >= 1 ? next : prev;
+    });
+    setPosturePct((prev) => {
+      const next = Math.round(prev + (posture - prev) * 0.36);
+      return Math.abs(next - prev) >= 1 ? next : prev;
+    });
+  }, []);
 
   return (
     <div className="mi-page">
@@ -855,7 +1145,15 @@ export default function MockInterview() {
 
           <article className="mi-panel mi-transcript-card">
             <h3 className="mi-block-title">Transcript</h3>
-            <div className="mi-transcript-box">{transcriptPreview || "Start speaking..."}</div>
+            <div
+              ref={transcriptBoxRef}
+              className="mi-transcript-box"
+              role="log"
+              aria-live="polite"
+              aria-atomic="false"
+            >
+              <span className="mi-transcript-live">{transcriptPreview || "Start speaking..."}</span>
+            </div>
             <div className="mi-wave" aria-hidden="true">
               {Array.from({ length: 40 }).map((_, indexWave) => (
                 <span key={indexWave} style={{ animationDelay: `${indexWave * 65}ms` }} />
@@ -882,56 +1180,12 @@ export default function MockInterview() {
                 showPlayback={false}
                 showInactiveOverlay={false}
                 onUploadComplete={handleUploadComplete}
-                onPostureScore={(score) => {
-                  const safe = clamp(Number(score) || 0, 0, 1);
-                  setLiveConfidence((prev) => {
-                    const next = Number((prev + (safe - prev) * 0.32).toFixed(4));
-                    return Math.abs(next - prev) >= 0.01 ? next : prev;
-                  });
-                }}
-                onVoiceScore={(score) => {
-                  const safe = clamp(Number(score) || 0, 0, 1);
-                  setLiveVoiceScore((prev) => {
-                    const next = Number((prev + (safe - prev) * 0.34).toFixed(4));
-                    return Math.abs(next - prev) >= 0.01 ? next : prev;
-                  });
-                }}
+                onPostureScore={handlePostureScore}
+                onVoiceScore={handleVoiceScore}
                 onRecordingStart={handleRecordingStart}
                 onRecordingStop={handleRecordingStop}
-                onVoiceMetrics={(metrics) => {
-                  setPauseCount(Number(metrics.pauseCount) || 0);
-                  setPauseRatio(clamp(Number(metrics.pauseRatio ?? 1), 0, 1));
-                  setVoiceStability(clamp(Number(metrics.stability ?? 0), 0, 1));
-                  setTone(metrics.tone || "Neutral");
-                }}
-                onPostureMetrics={(metrics) => {
-                  const eye = clamp(Math.round((metrics.eyeContact || 0) * 100), 0, 100);
-                  const stability = clamp(Number(metrics.stability ?? 0), 0, 1);
-                  const alignment = clamp(
-                    Number(metrics.postureAlignment ?? metrics.stability ?? 0),
-                    0,
-                    1
-                  );
-                  const stillness = clamp(
-                    Number(metrics.headStillness ?? metrics.stability ?? 0),
-                    0,
-                    1
-                  );
-                  const postureBlend = clamp(
-                    stability * 0.3 + alignment * 0.36 + stillness * 0.34,
-                    0,
-                    1
-                  );
-                  const posture = clamp(Math.round(postureBlend * 100), 0, 100);
-                  setEyeContactPct((prev) => {
-                    const next = Math.round(prev + (eye - prev) * 0.36);
-                    return Math.abs(next - prev) >= 1 ? next : prev;
-                  });
-                  setPosturePct((prev) => {
-                    const next = Math.round(prev + (posture - prev) * 0.36);
-                    return Math.abs(next - prev) >= 1 ? next : prev;
-                  });
-                }}
+                onVoiceMetrics={handleVoiceMetrics}
+                onPostureMetrics={handlePostureMetrics}
                 onRecordingStateChange={setIsRecording}
               />
               <span className="mi-camera-dot" aria-hidden="true" />

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -532,13 +532,15 @@ export default function Report() {
 
   const [history, setHistory] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [autoSavedAttemptId, setAutoSavedAttemptId] = useState("");
   const [waveTick, setWaveTick] = useState(0);
   const metrics = useMemo(() => buildMetrics(analysis || {}, transcript), [analysis, transcript]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       setWaveTick((prev) => prev + 1);
-    }, 10000);
+    }, 6500);
     return () => clearInterval(interval);
   }, []);
 
@@ -666,14 +668,31 @@ export default function Report() {
     [aiGradePercent, answerRelevance, benchmark, metrics]
   );
 
-  useEffect(() => {
+  const fetchHistory = useCallback(async () => {
+    const token = localStorage.getItem("token");
     const user = safeParse(localStorage.getItem("user") || "null");
-    if (!user?._id) return;
-    fetch(`${API_BASE_URL}/api/test-results/${user._id}`)
-      .then((res) => res.json())
-      .then((data) => setHistory(Array.isArray(data) ? data : []))
-      .catch(() => setHistory([]));
+    if (!token || !user?._id) {
+      setHistory([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/test-results/${encodeURIComponent(user._id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch history");
+      }
+      setHistory(Array.isArray(data) ? data : []);
+    } catch {
+      setHistory([]);
+    }
   }, []);
+
+  useEffect(() => {
+    void fetchHistory();
+  }, [fetchHistory]);
 
   const performanceTrend = useMemo(() => {
     if (questionReviews.length) {
@@ -783,23 +802,111 @@ export default function Report() {
     return [...metricAligned, ...lowMatch, ...adaptiveGuidance].slice(0, 8);
   }, [adaptiveGuidance, questionReviews, skillImprovements, skillStrengths]);
 
-  const handleSaveTest = async () => {
+  const attemptId = String(analysis?.attempt_id || attemptSignature);
+
+  const saveTestRecord = useCallback(async (source = "manual", notify = false) => {
     const user = safeParse(localStorage.getItem("user") || "null");
-    if (!user?._id) return alert("Please login first");
+    const token = localStorage.getItem("token");
+    if (!user?._id || !token) {
+      if (notify) alert("Please login first");
+      return false;
+    }
+
     try {
-      setSaving(true);
+      if (source === "manual") {
+        setSaving(true);
+      } else {
+        setAutoSaving(true);
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/test-results/save`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user._id, confidence: metrics.confidence10, pace: metrics.pace10, clarity: metrics.clarity10 }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          attemptId,
+          confidence: metrics.confidence10,
+          pace: metrics.pace10,
+          clarity: metrics.clarity10,
+          overallPercent: aiGradePercent,
+          answerRelevance,
+          aiGrade10,
+          confidencePercent: metrics.confidencePercent,
+          pacePercent: metrics.pacePercent,
+          clarityPercent: metrics.clarityPercent,
+          wordsPerMinute: metrics.wordsPerMinute,
+          eyeContact: metrics.eyeContact,
+          postureStability: metrics.postureStability,
+          vocabularyRange: metrics.vocabularyRange,
+          questionCount: questionReviews.length,
+          summaryBand: scoreBand(aiGradePercent),
+          aiFeedback: assistantGuidance,
+          source,
+        }),
       });
-      if (!response.ok) return alert("Failed to save test");
-      alert("Test saved successfully");
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to save test");
+      }
+
+      await fetchHistory();
+
+      if (notify) {
+        alert(data.updated ? "Test record updated." : "Test saved successfully");
+      }
+      return true;
     } catch {
-      alert("Something went wrong while saving");
+      if (notify) {
+        alert("Something went wrong while saving");
+      }
+      return false;
     } finally {
-      setSaving(false);
+      if (source === "manual") {
+        setSaving(false);
+      } else {
+        setAutoSaving(false);
+      }
     }
+  }, [
+    aiGrade10,
+    aiGradePercent,
+    answerRelevance,
+    assistantGuidance,
+    attemptId,
+    fetchHistory,
+    metrics.clarity10,
+    metrics.clarityPercent,
+    metrics.confidence10,
+    metrics.confidencePercent,
+    metrics.eyeContact,
+    metrics.pace10,
+    metrics.pacePercent,
+    metrics.postureStability,
+    metrics.vocabularyRange,
+    metrics.wordsPerMinute,
+    questionReviews.length,
+  ]);
+
+  useEffect(() => {
+    if (!analysis) return;
+    if (!attemptId || autoSavedAttemptId === attemptId) return;
+
+    let mounted = true;
+    void saveTestRecord("auto", false).then((saved) => {
+      if (!mounted || !saved) return;
+      setAutoSavedAttemptId(attemptId);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [analysis, attemptId, autoSavedAttemptId, saveTestRecord]);
+
+  const handleSaveTest = async () => {
+    await saveTestRecord("manual", true);
   };
 
   const handleDownloadReport = () => {
@@ -933,7 +1040,7 @@ export default function Report() {
         </section>
 
         <div className="rp-actions">
-          <button type="button" className="rp-btn rp-save" disabled={saving} onClick={handleSaveTest}>{saving ? "Saving..." : "Save Test Record"}</button>
+          <button type="button" className="rp-btn rp-save" disabled={saving || autoSaving} onClick={handleSaveTest}>{saving ? "Saving..." : autoSaving ? "Auto-saving..." : "Save Test Record"}</button>
           <button type="button" className="rp-btn rp-download" onClick={handleDownloadReport}>Download Report</button>
         </div>
       </main>

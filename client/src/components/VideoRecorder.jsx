@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   forwardRef,
+  memo,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -11,12 +12,12 @@ import VoiceAnalyzer from "./VoiceAnalyzer";
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
 
-const HIGH_QUALITY_MEDIA_CONSTRAINTS = {
+const OPTIMIZED_MEDIA_CONSTRAINTS = {
   video: {
     facingMode: "user",
-    width: { ideal: 1280, max: 1280 },
-    height: { ideal: 720, max: 720 },
-    frameRate: { ideal: 24, max: 30 },
+    width: { ideal: 640, max: 640 },
+    height: { ideal: 480, max: 480 },
+    frameRate: { ideal: 26, min: 24, max: 30 },
   },
   audio: {
     echoCancellation: true,
@@ -30,8 +31,17 @@ const HIGH_QUALITY_MEDIA_CONSTRAINTS = {
 };
 
 const FALLBACK_MEDIA_CONSTRAINTS = {
-  video: true,
-  audio: true,
+  video: {
+    facingMode: "user",
+    width: { ideal: 640 },
+    height: { ideal: 480 },
+    frameRate: { ideal: 24, max: 30 },
+  },
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
 };
 
 function pickRecorderMimeType() {
@@ -60,7 +70,7 @@ function buildUploadFallback(reason = "") {
   };
 }
 
-const VideoRecorder = forwardRef(function VideoRecorder({
+const VideoRecorder = memo(forwardRef(function VideoRecorder({
   onUploadComplete,
   onPostureScore,
   onVoiceScore,
@@ -78,8 +88,10 @@ const VideoRecorder = forwardRef(function VideoRecorder({
   showInactiveOverlay = false,
 }, ref) {
   const videoRef = useRef(null);
+  const streamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const emotionRef = useRef("Neutral");
 
   const [stream, setStream] = useState(null);
   const [recording, setRecording] = useState(false);
@@ -92,7 +104,7 @@ const VideoRecorder = forwardRef(function VideoRecorder({
     async function initMedia() {
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia(
-          HIGH_QUALITY_MEDIA_CONSTRAINTS
+          OPTIMIZED_MEDIA_CONSTRAINTS
         );
       } catch {
         try {
@@ -105,13 +117,14 @@ const VideoRecorder = forwardRef(function VideoRecorder({
         }
       }
 
+      streamRef.current = mediaStream;
       setStream(mediaStream);
 
       const [videoTrack] = mediaStream.getVideoTracks();
       const [audioTrack] = mediaStream.getAudioTracks();
 
       if (videoTrack) {
-        videoTrack.contentHint = "detail";
+        videoTrack.contentHint = "motion";
       }
 
       if (audioTrack) {
@@ -119,25 +132,32 @@ const VideoRecorder = forwardRef(function VideoRecorder({
       }
 
       if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
+        if (videoRef.current.srcObject !== mediaStream) {
+          videoRef.current.srcObject = mediaStream;
+        }
+        videoRef.current.play?.().catch(() => {});
       }
     }
 
     initMedia();
 
     return () => {
-      if (mediaStream) {
-        mediaStream.getTracks().forEach((track) => track.stop());
+      const activeStream = streamRef.current || mediaStream;
+      if (activeStream) {
+        activeStream.getTracks().forEach((track) => track.stop());
       }
+      streamRef.current = null;
     };
   }, []);
 
   const startRecording = useCallback(() => {
-    if (!stream) return;
+    const activeStream = streamRef.current;
+    if (!activeStream || recording) return;
 
     chunksRef.current = [];
     setVideoURL(null);
     setEmotion("Neutral");
+    emotionRef.current = "Neutral";
     onEmotionChange?.("Neutral");
 
     onRecordingStart?.();
@@ -145,14 +165,14 @@ const VideoRecorder = forwardRef(function VideoRecorder({
 
     const mimeType = pickRecorderMimeType();
     const recorderOptions = {
-      videoBitsPerSecond: 2_500_000,
-      audioBitsPerSecond: 128_000,
+      videoBitsPerSecond: 1_200_000,
+      audioBitsPerSecond: 96_000,
     };
     if (mimeType) {
       recorderOptions.mimeType = mimeType;
     }
 
-    const recorder = new MediaRecorder(stream, recorderOptions);
+    const recorder = new MediaRecorder(activeStream, recorderOptions);
 
     mediaRecorderRef.current = recorder;
 
@@ -195,14 +215,14 @@ const VideoRecorder = forwardRef(function VideoRecorder({
       }
     };
 
-    recorder.start(1000);
+    recorder.start(1500);
     setRecording(true);
   }, [
+    recording,
     onEmotionChange,
     onRecordingStart,
     onRecordingStateChange,
     onUploadComplete,
-    stream,
   ]);
 
   const stopRecording = useCallback(() => {
@@ -219,9 +239,9 @@ const VideoRecorder = forwardRef(function VideoRecorder({
       startRecording,
       stopRecording,
       isRecording: () => recording,
-      hasStream: () => Boolean(stream),
+      hasStream: () => Boolean(streamRef.current),
     }),
-    [recording, startRecording, stopRecording, stream]
+    [recording, startRecording, stopRecording]
   );
 
   return (
@@ -259,10 +279,12 @@ const VideoRecorder = forwardRef(function VideoRecorder({
         <PostureAnalyzer
           videoRef={videoRef}
           onMetrics={onPostureMetrics}
-          onScoreUpdate={(score, emotionValue, metrics) => {
+          onScoreUpdate={(score, emotionValue) => {
             onPostureScore?.(score);
-            onPostureMetrics?.(metrics || {});
-            setEmotion(emotionValue);
+            if (showEmotion && emotionValue !== emotionRef.current) {
+              emotionRef.current = emotionValue;
+              setEmotion(emotionValue);
+            }
             onEmotionChange?.(emotionValue);
           }}
         />
@@ -295,6 +317,6 @@ const VideoRecorder = forwardRef(function VideoRecorder({
       )}
     </div>
   );
-});
+}));
 
 export default VideoRecorder;

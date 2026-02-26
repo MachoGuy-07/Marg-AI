@@ -1,10 +1,16 @@
 import { useEffect, useRef } from "react";
 
 export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
+  const onVoiceScoreRef = useRef(onVoiceScore);
+  const onMetricsRef = useRef(onMetrics);
   const audioContextRef = useRef(null);
   const animationRef = useRef(null);
   const lastProcessedAtRef = useRef(0);
+  const adaptiveIntervalRef = useRef(55);
   const smoothedVoiceScoreRef = useRef(0);
+  const isVisibleRef = useRef(
+    typeof document === "undefined" ? true : !document.hidden
+  );
 
   const lastEnergyRef = useRef(0);
   const instabilityRef = useRef(0);
@@ -16,7 +22,23 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
   const frameCounterRef = useRef(0);
 
   useEffect(() => {
+    onVoiceScoreRef.current = onVoiceScore;
+  }, [onVoiceScore]);
+
+  useEffect(() => {
+    onMetricsRef.current = onMetrics;
+  }, [onMetrics]);
+
+  useEffect(() => {
     if (!stream) return;
+
+    const handleVisibilityChange = () => {
+      isVisibleRef.current =
+        typeof document === "undefined" ? true : !document.hidden;
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
 
     lastEnergyRef.current = 0;
     instabilityRef.current = 0;
@@ -28,6 +50,7 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
     frameCounterRef.current = 0;
     lastProcessedAtRef.current = 0;
     smoothedVoiceScoreRef.current = 0;
+    adaptiveIntervalRef.current = 55;
 
     const audioContext =
       new (window.AudioContext || window.webkitAudioContext)();
@@ -39,8 +62,8 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
     const source = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
 
-    analyser.fftSize = 1024;
-    analyser.smoothingTimeConstant = 0.74;
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.72;
     source.connect(analyser);
 
     const freqData = new Uint8Array(analyser.frequencyBinCount);
@@ -51,14 +74,21 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
     const SILENCE_ENERGY = 14;
     const SILENCE_RMS = 0.014;
     const PAUSE_MIN_FRAMES = 7;
-    const PROCESS_INTERVAL_MS = 40;
+    const BASE_PROCESS_INTERVAL_MS = 55;
+    const MAX_PROCESS_INTERVAL_MS = 110;
 
     function analyze(timestamp = performance.now()) {
-      if (timestamp - lastProcessedAtRef.current < PROCESS_INTERVAL_MS) {
+      if (!isVisibleRef.current) {
+        animationRef.current = requestAnimationFrame(analyze);
+        return;
+      }
+
+      if (timestamp - lastProcessedAtRef.current < adaptiveIntervalRef.current) {
         animationRef.current = requestAnimationFrame(analyze);
         return;
       }
       lastProcessedAtRef.current = timestamp;
+      const startedAt = performance.now();
 
       analyser.getByteFrequencyData(freqData);
       analyser.getByteTimeDomainData(timeData);
@@ -125,9 +155,9 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
       else if (centroidHz < 1200 && rms > SILENCE_RMS) tone = "Calm";
       if (pauseRatio > 0.62) tone = "Flat";
 
-      if (frameCounterRef.current % 4 === 0) {
-        onVoiceScore?.(smoothedVoiceScoreRef.current);
-        onMetrics?.({
+      if (frameCounterRef.current % 5 === 0) {
+        onVoiceScoreRef.current?.(smoothedVoiceScoreRef.current);
+        onMetricsRef.current?.({
           voiceScore: smoothedVoiceScoreRef.current,
           pauseCount: pauseCountRef.current,
           pauseRatio,
@@ -139,6 +169,19 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
         });
       }
 
+      const runMs = performance.now() - startedAt;
+      if (runMs > 18) {
+        adaptiveIntervalRef.current = Math.min(
+          MAX_PROCESS_INTERVAL_MS,
+          adaptiveIntervalRef.current + 6
+        );
+      } else if (runMs < 10) {
+        adaptiveIntervalRef.current = Math.max(
+          BASE_PROCESS_INTERVAL_MS,
+          adaptiveIntervalRef.current - 3
+        );
+      }
+
       animationRef.current = requestAnimationFrame(analyze);
     }
 
@@ -147,8 +190,11 @@ export default function VoiceAnalyzer({ stream, onVoiceScore, onMetrics }) {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       if (audioContextRef.current) audioContextRef.current.close();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
     };
-  }, [stream, onMetrics, onVoiceScore]);
+  }, [stream]);
 
   return null;
 }

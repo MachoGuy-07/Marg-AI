@@ -155,6 +155,7 @@
   min-height: 126px;
   max-height: 220px;
   overflow-y: auto;
+  scroll-behavior: smooth;
   border-radius: 14px;
   border: 1px solid rgba(223, 198, 255, 0.26);
   background: rgba(249, 236, 255, 0.22);
@@ -162,6 +163,13 @@
   color: rgba(252, 248, 255, 0.96);
   font-size: 1.82rem;
   line-height: 1.36;
+}
+
+.mi-transcript-live {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 140ms ease, transform 140ms ease;
 }
 
 .mi-wave {
