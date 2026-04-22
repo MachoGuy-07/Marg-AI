@@ -1,0 +1,39 @@
+.glitch-overlay {
+  position: fixed;
+  inset: 0;
+  background: black;
+  z-index: 9999;
+  animation: flicker 1.2s forwards;
+}
+
+.glitch-flash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    #00ffff,
+    #ff00ff,
+    #00ffff
+  );
+  mix-blend-mode: screen;
+  animation: glitch 1.2s forwards;
+  opacity: 0.6;
+}
+
+@keyframes flicker {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  20% { opacity: 0.3; }
+  40% { opacity: 1; }
+  60% { opacity: 0.2; }
+  100% { opacity: 0; }
+}
+
+@keyframes glitch {
+  0% { transform: translateX(0); }
+  20% { transform: translateX(-10px); }
+  40% { transform: translateX(10px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+  100% { transform: translateX(0); }
+}

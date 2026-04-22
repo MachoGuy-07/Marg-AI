@@ -1,0 +1,40 @@
+/* Prevent white flash */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background: linear-gradient(135deg,#f8fafc,#eef2ff);
+  overflow: hidden;
+}
+
+/* Container holds both pages */
+.page-enter,
+.page-exit {
+  position: absolute;
+  width: 100%;
+  top: 0;
+  left: 0;
+}
+
+/* NEW PAGE STARTS RIGHT */
+.page-enter {
+  transform: translateX(100%);
+  z-index: 2;
+}
+
+/* NEW PAGE MOVES IN */
+.page-enter-active {
+  transform: translateX(0%);
+  transition: transform 700ms cubic-bezier(.77,0,.18,1);
+}
+
+/* OLD PAGE STARTS CENTER */
+.page-exit {
+  transform: translateX(0%);
+  z-index: 1;
+}
+
+/* OLD PAGE MOVES LEFT */
+.page-exit-active {
+  transform: translateX(-100%);
+  transition: transform 700ms cubic-bezier(.77,0,.18,1);
+}
