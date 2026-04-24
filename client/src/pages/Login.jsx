@@ -103,6 +103,7 @@ export default function Login({ defaultMode = "login" }) {
     process.env.REACT_APP_GOOGLE_CLIENT_ID || ""
   );
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   const visibleError = useMemo(() => {
     const message = String(error || "").trim();
@@ -285,6 +286,7 @@ export default function Login({ defaultMode = "login" }) {
     if (nextMode === mode) return;
     setMode(nextMode);
     setError("");
+    setSuccessMessage("");
     if (nextMode === "signup") {
       navigate("/register", { replace: true });
     } else {
@@ -295,9 +297,21 @@ export default function Login({ defaultMode = "login" }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setSuccessMessage("");
 
     if (!email || !password || (mode === "signup" && !name.trim())) {
       setError("Please complete all required fields.");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long.");
       return;
     }
 
@@ -328,16 +342,26 @@ export default function Login({ defaultMode = "login" }) {
       if (!response.ok) {
         setError(
           data.error ||
-            (mode === "login"
-              ? `Login failed (${response.status}).`
-              : `Sign up failed (${response.status}).`)
+          (mode === "login"
+            ? `Login failed (${response.status}).`
+            : `Sign up failed (${response.status}).`)
         );
         return;
       }
 
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      navigate("/", { replace: true });
+      if (mode === "signup" && data.message) {
+        setSuccessMessage(data.message);
+        setMode("login");
+        navigate("/login", { replace: true });
+        setPassword("");
+        return;
+      }
+
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
+        navigate("/", { replace: true });
+      }
     } catch (submitError) {
       console.error("Authentication request failed:", submitError);
       setError(
@@ -552,17 +576,24 @@ export default function Login({ defaultMode = "login" }) {
                     type="button"
                     className="auth-eye"
                     aria-label={showPassword ? "Hide password" : "Show password"}
-                    onClick={() => setShowPassword((prev) => !prev)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setShowPassword((prev) => !prev);
+                    }}
                   >
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M1 12C2.7 8.1 6.5 5.5 12 5.5S21.3 8.1 23 12c-1.7 3.9-5.5 6.5-11 6.5S2.7 15.9 1 12Z" />
                       <circle cx="12" cy="12" r="3.2" />
+                      {showPassword && (
+                        <line x1="3" y1="21" x2="21" y2="3" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                      )}
                     </svg>
                   </button>
                 </div>
               </label>
 
               {visibleError ? <p className="auth-error">{visibleError}</p> : null}
+              {successMessage ? <p className="auth-success" style={{ color: '#4caf50', marginTop: '4px', fontSize: '14px' }}>{successMessage}</p> : null}
 
               <button type="submit" className="auth-submit" disabled={loading}>
                 {loading ? "Please wait..." : mode === "login" ? "Login" : "Create Account"}
@@ -574,21 +605,8 @@ export default function Login({ defaultMode = "login" }) {
                 <div className="auth-google-host">
                   <div id="auth-google-button" />
                 </div>
-              ) : (
-                <button type="button" className="auth-google-fallback" disabled aria-label="Google">
-                  <span className="social-badge social-google">G</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() =>
-                  setError("LinkedIn sign-in is not configured yet. Use email or Google.")
-                }
-                disabled={loading}
-              >
-                <span className="social-badge social-linkedin">in</span>
-                LinkedIn
-              </button>
+              ) : null}
+
             </div>
           </div>
         </section>

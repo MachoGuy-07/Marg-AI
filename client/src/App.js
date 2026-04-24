@@ -10,6 +10,7 @@ import Report from "./pages/Report";
 import TopicPractice from "./pages/TopicPractice";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
+import VerifyEmail from "./pages/VerifyEmail";
 import "./styles/home.css";
 
 function AppLayout() {
@@ -54,6 +55,7 @@ function AppLayout() {
       <Route path="/dashboard" element={<Profile />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Login defaultMode="signup" />} />
+      <Route path="/verify-email/:token" element={<VerifyEmail />} />
     </Routes>
   );
 
