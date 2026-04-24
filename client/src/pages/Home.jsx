@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/home.css";
-
 export default function Home() {
   const navigate = useNavigate();
   const [slideDirection, setSlideDirection] = useState(null);
@@ -34,7 +33,11 @@ export default function Home() {
       navigate(route, { state: { from: "home" } });
     }, 600);
   };
-
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+    navigate("/login");
+  };
   const handleGlassMove = (event) => {
     const panel = event.currentTarget;
     const rect = panel.getBoundingClientRect();
@@ -92,10 +95,12 @@ export default function Home() {
           <div className="topbar-actions">
             <button
               type="button"
-              className="topbar-dashboard-btn"
-              onClick={() => triggerTransition("/profile")}
+              className="topbar-logout-btn"
+              onClick={handleLogout}
+              aria-label="Logout"
+              title="Logout"
             >
-              Dashboard
+              <span>LOGOUT</span>
             </button>
             <button
               type="button"
@@ -156,110 +161,110 @@ export default function Home() {
               </div>
             </div>
 
-{/* =====================================
+            {/* =====================================
    RIGHT AI ANALYSIS PANEL
 ===================================== */}
-<div className="hero-right">
-  <div className="ai-panel">
+            <div className="hero-right">
+              <div className="ai-panel">
 
-    {/* Header dots */}
-    <div className="ai-header">
-      <span></span>
-      <span></span>
-      <span></span>
-    </div>
+                {/* Header dots */}
+                <div className="ai-header">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
 
-    {/* Webcam */}
-    <div className="ai-video-box">
-      <video
-        ref={videoRef}
-        className="webcam"
-        autoPlay
-        muted
-        playsInline
-      />
-      <div className="face-box"></div>
-    </div>
+                {/* Webcam */}
+                <div className="ai-video-box">
+                  <video
+                    ref={videoRef}
+                    className="webcam"
+                    autoPlay
+                    muted
+                    playsInline
+                  />
+                  <div className="face-box"></div>
+                </div>
 
-    {/* Stats */}
-    <div className="ai-stats">
+                {/* Stats */}
+                <div className="ai-stats">
 
-      <div className="stat-row">
-        <span>Communication</span>
-        <span>92%</span>
-      </div>
-      <div className="slider"><div style={{width:"92%"}}></div></div>
+                  <div className="stat-row">
+                    <span>Communication</span>
+                    <span>92%</span>
+                  </div>
+                  <div className="slider"><div style={{ width: "92%" }}></div></div>
 
-      <div className="stat-row">
-        <span>Code Accuracy</span>
-        <span>87%</span>
-      </div>
-      <div className="slider"><div style={{width:"87%"}}></div></div>
+                  <div className="stat-row">
+                    <span>Code Accuracy</span>
+                    <span>87%</span>
+                  </div>
+                  <div className="slider"><div style={{ width: "87%" }}></div></div>
 
-      <div className="stat-row">
-        <span>Confidence</span>
-        <span>High</span>
-      </div>
-      <div className="slider"><div style={{width:"80%"}}></div></div>
+                  <div className="stat-row">
+                    <span>Confidence</span>
+                    <span>High</span>
+                  </div>
+                  <div className="slider"><div style={{ width: "80%" }}></div></div>
 
-    </div>
+                </div>
 
-    {/* Bar graph */}
-    <div className="bar-graph">
-      <span></span><span></span><span></span>
-      <span></span><span></span><span></span>
-      <span></span><span></span>
-    </div>
+                {/* Bar graph */}
+                <div className="bar-graph">
+                  <span></span><span></span><span></span>
+                  <span></span><span></span><span></span>
+                  <span></span><span></span>
+                </div>
 
-        {/* Footer metrics */}
-    <div className="ai-footer">
-      <div className="signal-chip">
-        <div className="signal-head">
-          <span className="signal-name">Eye Contact</span>
-          <span className="signal-score">Stable</span>
-        </div>
-        <div className="signal-dots" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </div>
+                {/* Footer metrics */}
+                <div className="ai-footer">
+                  <div className="signal-chip">
+                    <div className="signal-head">
+                      <span className="signal-name">Eye Contact</span>
+                      <span className="signal-score">Stable</span>
+                    </div>
+                    <div className="signal-dots" aria-hidden="true">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  </div>
 
-      <div className="signal-chip">
-        <div className="signal-head">
-          <span className="signal-name">Code Quality</span>
-          <span className="signal-score">A-</span>
-        </div>
-        <div className="signal-track" aria-hidden="true">
-          <span className="signal-fill code-fill"></span>
-        </div>
-      </div>
+                  <div className="signal-chip">
+                    <div className="signal-head">
+                      <span className="signal-name">Code Quality</span>
+                      <span className="signal-score">A-</span>
+                    </div>
+                    <div className="signal-track" aria-hidden="true">
+                      <span className="signal-fill code-fill"></span>
+                    </div>
+                  </div>
 
-      <div className="signal-chip">
-        <div className="signal-head">
-          <span className="signal-name">Speaking Pace</span>
-          <span className="signal-score">128 WPM</span>
-        </div>
-        <div className="pace-bars" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </div>
-    </div>
+                  <div className="signal-chip">
+                    <div className="signal-head">
+                      <span className="signal-name">Speaking Pace</span>
+                      <span className="signal-score">128 WPM</span>
+                    </div>
+                    <div className="pace-bars" aria-hidden="true">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  </div>
+                </div>
 
-    <div className="analyzing">Analyzing...</div>
+                <div className="analyzing">Analyzing...</div>
 
-  </div>
-</div>
+              </div>
+            </div>
 
           </div>
         </section>
